@@ -1,8 +1,9 @@
 // devkey.rs — embedded Ed25519 signer public keys.
 //
 // signer_key_id registry: 1 = dev (spec Appendix B.2 vector signing key),
-// 2 = production. The matching secret keys live outside all repositories
-// and are never committed. Rotation adds a new key_id (spec §5).
+// 2 = production, 3 = vending-hot (automated vending on the GPU host).
+// The matching secret keys live outside all repositories and are never
+// committed. Rotation adds a new key_id (spec §5).
 
 /// Ed25519 public key for signer_key_id 0x00000001 (dev).
 pub const PUBLIC_KEY: [u8; 32] = [
@@ -16,4 +17,16 @@ pub const PUBLIC_KEY: [u8; 32] = [
 pub const PROD_PUBLIC_KEY: [u8; 32] = [
     0xaa, 0x2e, 0xc9, 0x24, 0xb8, 0x57, 0x72, 0xa0, 0xf7, 0x81, 0x89, 0x6e, 0x4f, 0x65, 0xa6, 0x7e,
     0xa2, 0x4a, 0x21, 0xca, 0x63, 0x0f, 0xb9, 0x02, 0xd4, 0xeb, 0x72, 0xc9, 0xeb, 0x73, 0xca, 0xbe,
+];
+
+/// Ed25519 public key for signer_key_id 0x00000003 (vending-hot).
+/// Automated-vending hot key on the GPU host — signs packages only, holds
+/// no funds; a leak can mint validly-signed packages but each package's
+/// (B, d) still must pass the buyer's binding check, so impact is bounded
+/// (rotate → key_id=4 on suspicion). Generated 2026-09-19 via
+/// `pkg-sign-dev genkey`; secret key lives at ~/tron-vend-keys/ on the GPU
+/// host (mode 0600, never committed), offline backup per docs/P6-设计 §2.5.
+pub const VEND_PUBLIC_KEY: [u8; 32] = [
+    0x30, 0x2a, 0xcd, 0x9e, 0xdb, 0xf9, 0x5a, 0x2b, 0xf6, 0x3f, 0xbb, 0x6a, 0x3c, 0xa2, 0xa4, 0xff,
+    0xf2, 0x89, 0xd3, 0x21, 0x0f, 0x1e, 0x46, 0x3d, 0xd0, 0x98, 0x86, 0x35, 0x3a, 0x64, 0x1f, 0x07,
 ];
