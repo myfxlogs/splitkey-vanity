@@ -48,6 +48,7 @@ jobs:
           echo "got: $got / want: $want"
           [ "$got" = "$want" ]
       - name: Create release + upload artifact
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
