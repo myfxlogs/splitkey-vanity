@@ -1,7 +1,15 @@
-# tron-tool
+# splitkey-vanity
 
-Buyer-side tool for split-key TRON vanity addresses.
-靓号买家工具：私钥在你自己电脑上生成，卖家数学上不可能知道。
+Buyer-side tool for split-key vanity addresses — sell compute, not keys.
+靓号 split-key 买家工具——卖家只卖算力，私钥不出你本机。
+
+**Status**: protocol spec finalized; implementation in progress.
+协议规范已定稿（多轮评审销项），实现进行中。
+
+**Chains**: TRON first; the split-key protocol is pure secp256k1 and
+extends to any chain (ETH, BTC) with a thin address-derivation adapter.
+首发 TRON；split-key 内核是纯 secp256k1 数学，链差异只在地址推导
+适配层，可扩展至 ETH/BTC。
 
 ## Trust model / 信任模型
 
@@ -14,6 +22,14 @@ that is mathematics (EC discrete log), not a promise.
 最终私钥 `priv = b + d` 在你本机计算。卖家无法反推——这是椭圆曲线
 离散对数难题的数学保证，不是口头承诺。
 
+Orders are buyer-signed (`TRONSPK-ORDER-v1|pattern|B`) and bound to
+payment by fingerprint `H = keccak256(order)` — the seller only starts
+GPU work on escrow-released orders, and the escrow artifact is the
+arbitration record.
+
+订单由买家签名承诺，付款经托管绑定订单指纹 `H = keccak256(order)`——
+卖家只对托管放行的订单开工，托管固化件即仲裁证据。
+
 Anyone can audit this tool (single binary, minimal dependencies) or
 re-implement the protocol from [`spec/`](spec/) — the specs are complete
 enough to verify a delivery with any secp256k1 library.
@@ -21,28 +37,36 @@ enough to verify a delivery with any secp256k1 library.
 任何人都可以审计本工具（单二进制、最小依赖），或按
 [`spec/`](spec/) 用任意 secp256k1 库自行验证交付物。
 
-## Modes / 模式
+## Commands / 命令
+
+The binary is `tron-tool`. Interface per `spec/` (implementation
+in progress):
 
 ```
-tron-tool keygen              # 生成 (b, B)：b 保密保存
-tron-tool order               # 用 b 签订单承诺 → 提交 {订单,签名} 给卖家
-tron-tool redeem              # 收货：验签 → 绑定/订单/模式三检 → 出私钥QR
-tron-tool sign                # 商户：TIP-191 签名收款地址声明
-tron-tool verify              # 验证签名（恢复地址比对）
+tron-tool keygen -o <file>                        # 生成 (b, B)：b 落 0600 文件
+tron-tool order --key <f> --pattern 'repeat:<n>' -o <f>
+    # 用 b 签订单承诺 → .tronorder + 回显 H（付款绑定引用）
+tron-tool redeem --package <f> --key <f> --expect-pattern 'repeat:<n>'
+    # 收货：验签 → 绑定/订单/自洽三检 → 出私钥 + QR
+tron-tool sign                                  # 商户：TIP-191 签名收款地址声明
+tron-tool verify                                # 验证签名（恢复地址比对）
 ```
 
 ## Specs / 协议规范
 
-- [`spec/split-key.md`](spec/split-key.md) — split-key 协议（B/d 格式、验证公式）
-- [`spec/package-format.md`](spec/package-format.md) — `TRONSPK1` 签名交付包格式
+- [`spec/split-key.md`](spec/split-key.md) — split-key 协议（B/d 格式、
+  三段验收链、订单承诺与付款绑定、pattern 语法）
+- [`spec/package-format.md`](spec/package-format.md) — `TRONSPK1` 签名
+  交付包格式与解析规则
 - [`spec/message-signing.md`](spec/message-signing.md) — TIP-191 消息签名
 
 ## Security notes / 安全须知
 
 - `b` 丢失 = 订单全损，工具生成后请备份（0600 文件）
 - 验证只在离线工具内进行。任何要求"上传文件到网站验证"的都是钓鱼
-- 收款方付款前：扫码 + 数满尾号位数；不要从转账记录复制地址
-- All secrets are wiped from memory after use (zeroize); output files are `0600`.
+- 付款前核对托管绑定的订单指纹 == 本机回显的 `H`，不符=订单被换
+- All secrets are wiped from memory after use (zeroize); output files
+  are `0600`.
 
 ## License
 
