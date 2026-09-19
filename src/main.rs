@@ -14,6 +14,7 @@ use tron_tool::{addr, order, package, pattern::Pattern, point, qr, redeem, scala
 #[derive(Parser)]
 #[command(
     name = "tron-tool",
+    version,
     about = "Buyer-side tool for split-key TRON vanity addresses"
 )]
 struct Cli {
