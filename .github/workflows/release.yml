@@ -35,7 +35,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $pkg = "tron-tool-${{ env:GITHUB_REF_NAME }}-windows-x86_64"
+          $pkg = "tron-tool-$env:GITHUB_REF_NAME-windows-x86_64"
           New-Item -ItemType Directory $pkg | Out-Null
           Copy-Item target/release/tron-tool.exe "$pkg/"
           Compress-Archive "$pkg" "$pkg.zip"
