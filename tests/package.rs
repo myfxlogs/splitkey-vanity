@@ -105,6 +105,30 @@ fn roundtrip_with_ephemeral_key() {
 }
 
 #[test]
+fn build_body_layout_and_length() {
+    // Unsigned body: exactly 89+N bytes with the spec field offsets.
+    let b: [u8; 33] = hex_decode(B_PUB, Some(33)).unwrap().try_into().unwrap();
+    let d: [u8; 32] = hex_decode(D_FOUND, Some(32)).unwrap().try_into().unwrap();
+    let body = package::build_body(0x00000001, "repeat:4", &b, &d, 1789752000);
+    assert_eq!(body.len(), 89 + 8);
+    assert_eq!(&body[0..8], b"TRONSPK1");
+    assert_eq!(&body[8..10], &1u16.to_le_bytes());
+    assert_eq!(&body[10..14], &0x00000001u32.to_le_bytes());
+    assert_eq!(&body[14..16], &8u16.to_le_bytes());
+    assert_eq!(&body[16..24], b"repeat:4");
+    assert_eq!(&body[24..57], &b[..]);
+    assert_eq!(&body[57..89], &d[..]);
+    assert_eq!(&body[89..97], &1789752000u64.to_le_bytes());
+    // build_and_sign must be build_body + 64-byte signature — same prefix.
+    let mut sk_bytes = [0u8; 32];
+    tron_tool::fill_random(&mut sk_bytes);
+    let sk = ed25519_dalek::SigningKey::from_bytes(&sk_bytes);
+    let signed = package::build_and_sign(0x00000001, "repeat:4", &b, &d, 1789752000, &sk);
+    assert_eq!(signed.len(), 153 + 8);
+    assert_eq!(&signed[..89 + 8], &body[..]);
+}
+
+#[test]
 fn verifies_before_pattern_interpretation() {
     // A correctly-signed package with a bogus pattern field must still fail —
     // signature first, grammar after.

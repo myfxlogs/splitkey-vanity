@@ -103,15 +103,15 @@ pub fn parse_with_keys(data: &[u8], keys: &[(u32, [u8; 32])]) -> Result<Package,
     Ok(pkg)
 }
 
-/// Serialize + sign a package (issuer side: pkg-sign-dev, tests).
-/// `key_id` must match `signing_key`'s embedded identity.
-pub fn build_and_sign(
+/// Serialize the unsigned package body: magic..timestamp, exactly 89+N
+/// bytes. Shared by `build_and_sign` and the seller-side offline signer
+/// (`tron pkg-sign` signs a body produced without a signing key).
+pub fn build_body(
     key_id: u32,
     pattern: &str,
     b: &[u8; 33],
     d: &[u8; 32],
     timestamp: u64,
-    signing_key: &SigningKey,
 ) -> Vec<u8> {
     let n = pattern.len();
     let mut out = Vec::with_capacity(153 + n);
@@ -123,6 +123,20 @@ pub fn build_and_sign(
     out.extend_from_slice(b);
     out.extend_from_slice(d);
     out.extend_from_slice(&timestamp.to_le_bytes());
+    out
+}
+
+/// Serialize + sign a package (issuer side: pkg-sign-dev, tests).
+/// `key_id` must match `signing_key`'s embedded identity.
+pub fn build_and_sign(
+    key_id: u32,
+    pattern: &str,
+    b: &[u8; 33],
+    d: &[u8; 32],
+    timestamp: u64,
+    signing_key: &SigningKey,
+) -> Vec<u8> {
+    let mut out = build_body(key_id, pattern, b, d, timestamp);
     let sig = signing_key.sign(&out);
     out.extend_from_slice(&sig.to_bytes());
     out
