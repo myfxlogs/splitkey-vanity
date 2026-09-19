@@ -1,11 +1,19 @@
-// devkey.rs — DEV-ONLY embedded Ed25519 signer public key.
+// devkey.rs — embedded Ed25519 signer public keys.
 //
-// The matching secret key is generated during construction, lives outside
-// all repositories, and is never committed. P4 replaces this with the
-// production signing key (key rotation via signer_key_id).
+// signer_key_id registry: 1 = dev (spec Appendix B.2 vector signing key),
+// 2 = production. The matching secret keys live outside all repositories
+// and are never committed. Rotation adds a new key_id (spec §5).
 
-/// Ed25519 public key for signer_key_id 0x00000001 (dev placeholder).
+/// Ed25519 public key for signer_key_id 0x00000001 (dev).
 pub const PUBLIC_KEY: [u8; 32] = [
     0x38, 0xa5, 0x41, 0x3b, 0x3b, 0x67, 0x14, 0x28, 0x30, 0xee, 0xfe, 0x8a, 0x97, 0x69, 0x04, 0xff,
     0xce, 0x6e, 0x44, 0x62, 0xf5, 0x25, 0x60, 0x56, 0x8e, 0x25, 0x0f, 0x51, 0x8d, 0xe3, 0xa2, 0x40,
+];
+
+/// Ed25519 public key for signer_key_id 0x00000002 (production).
+/// Generated 2026-09-19 via `pkg-sign-dev genkey`; secret key lives at
+/// ~/tron-prod-keys/ (offline, mode 0600, never committed).
+pub const PROD_PUBLIC_KEY: [u8; 32] = [
+    0xaa, 0x2e, 0xc9, 0x24, 0xb8, 0x57, 0x72, 0xa0, 0xf7, 0x81, 0x89, 0x6e, 0x4f, 0x65, 0xa6, 0x7e,
+    0xa2, 0x4a, 0x21, 0xca, 0x63, 0x0f, 0xb9, 0x02, 0xd4, 0xeb, 0x72, 0xc9, 0xeb, 0x73, 0xca, 0xbe,
 ];

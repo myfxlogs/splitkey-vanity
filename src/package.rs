@@ -23,10 +23,13 @@ pub const SIG_LEN: usize = 64;
 pub const HEADER_LEN: usize = 16;
 
 /// Embedded signer key table, `key_id → Ed25519 public key` (rotation-ready).
-/// DEV PLACEHOLDER: key 0x00000001 is a throwaway development key — replace
-/// with the production signing key at P4. The matching secret key lives
-/// offline outside all repositories and is never committed.
-pub static SIGNER_KEYS: &[(u32, [u8; 32])] = &[(0x00000001, crate::devkey::PUBLIC_KEY)];
+/// Registry: 1 = dev (spec Appendix B.2 vector signing key — kept so the
+/// pinned vector stays verifiable), 2 = production. Secret keys live
+/// offline outside all repositories and are never committed.
+pub static SIGNER_KEYS: &[(u32, [u8; 32])] = &[
+    (0x00000001, crate::devkey::PUBLIC_KEY),
+    (0x00000002, crate::devkey::PROD_PUBLIC_KEY),
+];
 
 /// A parsed, signature-verified package.
 #[derive(Debug, Clone)]
