@@ -119,10 +119,7 @@ fn main() -> ExitCode {
 fn cmd_keygen(out: &std::path::Path) -> Result<(), String> {
     if out.exists() {
         // Overwriting a live b file destroys the order — refuse silently.
-        return Err(format!(
-            "{} exists — refusing to overwrite a key file",
-            out.display()
-        ));
+        return Err(format!("{} exists — refusing to overwrite", out.display()));
     }
     let b = scalar::generate_scalar(); // CSPRNG rejection sampling (§3)
     let b_point = point::pubkey_from_secret(&b)?;
@@ -137,6 +134,10 @@ fn cmd_keygen(out: &std::path::Path) -> Result<(), String> {
 }
 
 fn cmd_order(key: &std::path::Path, pattern: &str, out: &std::path::Path) -> Result<(), String> {
+    if out.exists() {
+        // The .tronorder record is the local source of --expect-pattern and H.
+        return Err(format!("{} exists — refusing to overwrite", out.display()));
+    }
     let pat = Pattern::parse(pattern)?;
     if pat.needs_reachability_warning() {
         eprintln!(

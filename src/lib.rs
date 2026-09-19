@@ -37,9 +37,16 @@ pub fn secure_open_write(path: &Path) -> io::Result<std::fs::File> {
 }
 
 /// Write `data` to `path` with 0600 permissions (all secret/secret-adjacent
-/// output goes through this).
+/// output goes through this). Refuses to overwrite an existing path — no
+/// tool output may silently clobber a file (F1 rework).
 pub fn write_secret_file(path: &Path, data: &[u8]) -> io::Result<()> {
     use std::io::Write;
+    if path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{} exists — refusing to overwrite", path.display()),
+        ));
+    }
     let mut f = secure_open_write(path)?;
     f.write_all(data)?;
     #[cfg(unix)]

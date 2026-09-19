@@ -82,10 +82,7 @@ fn main() -> ExitCode {
 
 fn genkey(out: &Path) -> Result<(), String> {
     if out.exists() {
-        return Err(format!(
-            "{} exists — refusing to overwrite a key file",
-            out.display()
-        ));
+        return Err(format!("{} exists — refusing to overwrite", out.display()));
     }
     let mut sk_bytes = [0u8; 32];
     tron_tool::fill_random(&mut sk_bytes);
@@ -109,6 +106,10 @@ fn sign(
     timestamp: Option<u64>,
     out: &Path,
 ) -> Result<(), String> {
+    if out.exists() {
+        // A signed delivery package is not regenerable — never clobber one.
+        return Err(format!("{} exists — refusing to overwrite", out.display()));
+    }
     let sk_bytes = scalar::read_scalar_file(key)?;
     let signing_key = SigningKey::from_bytes(&sk_bytes);
 
