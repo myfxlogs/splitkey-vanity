@@ -38,14 +38,26 @@ enough to verify a delivery with any secp256k1 library.
 
 ## Install / 安装
 
-Download a release artifact (linux tar.gz / windows zip) from
-[Releases](../../releases), then verify it — 下载后先验证再使用：
+Download a release artifact from [Releases](../../releases),
+then verify it — 下载后先验证再使用：
+
+| Platform | Artifact |
+|---|---|
+| Linux x86_64 | `tron-tool-v*-linux-x86_64.tar.gz` |
+| Linux aarch64 | `tron-tool-v*-linux-aarch64.tar.gz` |
+| Windows x86_64 | `tron-tool-v*-windows-x86_64.zip` |
+| macOS Intel | `tron-tool-v*-macos-x86_64.tar.gz` |
+| macOS Apple Silicon | `tron-tool-v*-macos-arm64.tar.gz` |
 
 ```bash
 sha256sum -c SHA256SUMS.txt            # checksum must match
-tar xf tron-tool-v1.0.0-linux-x86_64.tar.gz
-./tron-tool-v1.0.0-linux-x86_64/tron-tool --version   # → tron-tool 1.0.0
+tar xf tron-tool-v1.0.2-linux-x86_64.tar.gz
+./tron-tool-v1.0.2-linux-x86_64/tron-tool --version   # → tron-tool 1.0.2
 ```
+
+macOS Gatekeeper may flag the unsigned binary — allow it via
+`xattr -d com.apple.quarantine tron-tool` or System Settings →
+Privacy & Security. macOS 可能拦截未签名二进制，按此放行。
 
 Release binaries are built by CI from the tagged commit — auditable
 provenance, not a binary uploaded from the seller's machine.
@@ -56,30 +68,60 @@ Or build from source: `cargo build --release`（stable Rust）。
 
 ## Quickstart / 快速上手
 
+Run `tron-tool` with no arguments for the guided interactive menu —
+每一步都有默认值与中文提示，无需记参数：
+
+```bash
+tron-tool                # 交互菜单：keygen / order / redeem / sign / verify
+```
+
+Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out）：
+
 ```bash
 tron-tool keygen -o b.key                  # 生成买家秘密 b（0600），打印 B
-tron-tool order --key b.key --pattern 'repeat:8' -o o.tronorder
+tron-tool order -k b.key -p 'repeat:8' -o o.tronorder
                                            # 签订单 → .tronorder + 回显指纹 H
 # … 付款托管 → 卖家跑 GPU → 收到 pkg.tronspk …
-tron-tool redeem --package pkg.tronspk --key b.key \
-    --expect-pattern 'repeat:8' --export-priv priv.key -o qr.png
+tron-tool redeem -p pkg.tronspk -k b.key \
+    -e 'repeat:8' --export-priv priv.key -o qr.png
                                            # 三段验收 → 导出私钥 + 收款 QR
-tron-tool sign --key priv.key --message 'statement'      # TIP-191 声明签名
-tron-tool verify --address T... --message 'statement' --signature 0x...
+tron-tool sign -k priv.key -m 'statement'            # TIP-191 声明签名
+tron-tool verify -a T... -m 'statement' -s 0x...
 ```
+
+### Offline generation / 离线生成（可选加固）
+
+`b` never leaves your machine under the protocol — offline generation is
+extra hardening, not a requirement. 协议下 b 本就不出机，离线是可选加固：
+
+- `keygen --require-offline` — refuse when a network route is detected.
+  Best-effort self-check only: it CANNOT prove a machine is offline
+  (hotspots / VM bridges / compromised hosts evade it).
+  检测到网络路由即拒绝生成；这是自检纪律工具，不是安全保证。
+- Air-gapped flow / 气隙流程：offline machine runs `keygen` + `order` →
+  move only the `.tronorder` (public-safe) to an online machine → upload →
+  download `.tronspk` back to the offline machine → `redeem` offline.
+  离线机生成并签名，仅 .tronorder 经联网机上传；交付包回离线机验收。
+
+Keep your `.tronorder` safe — it is the pickup ticket: anyone holding it
+(or H) can track the order and download the package (useless without `b`,
+but it leaks your order).
+妥善保管 `.tronorder`：它是取货凭证，持文件者可查单、下载交付包。
 
 ## Commands / 命令
 
-The binary is `tron-tool`. All five commands implemented (v1.0.0)：
-五命令均已实现（v1.0.0）：
+The binary is `tron-tool`. Bare invocation opens the interactive menu
+(v1.0.2+); all five commands also take arguments for scripted use：
+裸跑进交互菜单；五命令均可参数化：
 
 | Command | Status | Purpose |
 |---|---|---|
-| `keygen -o <f>` | ✅ | 生成 (b, B)：b 落 0600 文件，B 打印供订单使用 |
-| `order --key <f> --pattern 'repeat:<n>' -o <f>` | ✅ | 用 b 签订单承诺 → `.tronorder` + 回显 H（付款绑定引用） |
-| `redeem --package <f> --key <f> --expect-pattern 'repeat:<n>'` | ✅ | 收货：验签 → 绑定/订单/自洽三检 → 导出私钥 + QR |
-| `sign --key <f> --message <m>` | ✅ | 商户：TIP-191 签名收款地址声明 |
-| `verify --address <a> --message <m> --signature <s>` | ✅ | 验证签名（恢复地址比对） |
+| *(no args)* | ✅ | 交互菜单 guided menu |
+| `keygen -o <f> [--require-offline]` | ✅ | 生成 (b, B)：b 落 0600 文件，B 打印供订单使用 |
+| `order -k <f> -p 'repeat:<n>' -o <f>` | ✅ | 用 b 签订单承诺 → `.tronorder` + 回显 H（付款绑定引用） |
+| `redeem -p <f> -k <f> -e 'repeat:<n>'` | ✅ | 收货：验签 → 绑定/订单/自洽三检 → 导出私钥 + QR |
+| `sign -k <f> -m <m>` | ✅ | 商户：TIP-191 签名收款地址声明 |
+| `verify -a <a> -m <m> -s <s>` | ✅ | 验证签名（恢复地址比对） |
 
 The seller-side GPU generator and packaging tools are a separate,
 private implementation — under split-key the seller's code has zero

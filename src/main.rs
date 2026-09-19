@@ -18,8 +18,9 @@ use tron_tool::{addr, order, package, pattern::Pattern, point, qr, redeem, scala
     about = "Buyer-side tool for split-key TRON vanity addresses"
 )]
 struct Cli {
+    /// Omit the subcommand for the guided interactive menu / 交互菜单.
     #[command(subcommand)]
-    cmd: Command,
+    cmd: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -29,14 +30,18 @@ enum Command {
         /// Output file for the secret scalar b (required — b is never printed).
         #[arg(short = 'o', long)]
         out: PathBuf,
+        /// Refuse to run when a network route is detected. Best-effort
+        /// self-check only — it cannot prove a machine is offline.
+        #[arg(long)]
+        require_offline: bool,
     },
     /// Sign an order commitment with b → .tronorder file + fingerprint H.
     Order {
         /// Secret scalar file (§7.1 format).
-        #[arg(long)]
+        #[arg(short = 'k', long)]
         key: PathBuf,
         /// Order pattern, e.g. 'repeat:8'.
-        #[arg(long)]
+        #[arg(short = 'p', long)]
         pattern: String,
         /// Output .tronorder file.
         #[arg(short = 'o', long)]
@@ -45,13 +50,13 @@ enum Command {
     /// Redeem a signed delivery package: verify → binding → order → consistency.
     Redeem {
         /// TRONSPK1 package file.
-        #[arg(long)]
+        #[arg(short = 'p', long)]
         package: PathBuf,
         /// Secret scalar file (§7.1 format) — the same b used for the order.
-        #[arg(long)]
+        #[arg(short = 'k', long)]
         key: PathBuf,
         /// The pattern from YOUR local order record, e.g. 'repeat:8' (required).
-        #[arg(long)]
+        #[arg(short = 'e', long)]
         expect_pattern: String,
         /// Export priv = (b + d) mod n to a §7.1 file (0600) for sign/wallet use.
         #[arg(long)]
@@ -67,22 +72,22 @@ enum Command {
     /// TIP-191 sign a message (merchant receive-address statement).
     Sign {
         /// Secret scalar file (§7.1 format).
-        #[arg(long)]
+        #[arg(short = 'k', long)]
         key: PathBuf,
         /// Statement text (UTF-8; byte length feeds the digest, not chars).
-        #[arg(long)]
+        #[arg(short = 'm', long)]
         message: String,
     },
     /// Verify a TIP-191 signature against a claimed address.
     Verify {
         /// Claimed TRON address (T...).
-        #[arg(long)]
+        #[arg(short = 'a', long)]
         address: String,
         /// Statement text that was signed.
-        #[arg(long)]
+        #[arg(short = 'm', long)]
         message: String,
         /// Signature hex (0x-prefixed or bare, 130 hex chars).
-        #[arg(long)]
+        #[arg(short = 's', long)]
         signature: String,
     },
 }
@@ -90,22 +95,26 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let r = match cli.cmd {
-        Command::Keygen { out } => cmd_keygen(&out).map(|_| true),
-        Command::Order { key, pattern, out } => cmd_order(&key, &pattern, &out).map(|_| true),
-        Command::Redeem {
+        None => interactive(),
+        Some(Command::Keygen {
+            out,
+            require_offline,
+        }) => cmd_keygen(&out, require_offline).map(|_| true),
+        Some(Command::Order { key, pattern, out }) => cmd_order(&key, &pattern, &out).map(|_| true),
+        Some(Command::Redeem {
             package,
             key,
             expect_pattern,
             export_priv,
             timeout,
             out,
-        } => cmd_redeem(&package, &key, &expect_pattern, export_priv, timeout, out).map(|_| true),
-        Command::Sign { key, message } => cmd_sign(&key, &message).map(|_| true),
-        Command::Verify {
+        }) => cmd_redeem(&package, &key, &expect_pattern, export_priv, timeout, out).map(|_| true),
+        Some(Command::Sign { key, message }) => cmd_sign(&key, &message).map(|_| true),
+        Some(Command::Verify {
             address,
             message,
             signature,
-        } => cmd_verify(&address, &message, &signature),
+        }) => cmd_verify(&address, &message, &signature),
     };
     match r {
         Ok(true) => ExitCode::SUCCESS,
@@ -117,10 +126,116 @@ fn main() -> ExitCode {
     }
 }
 
-fn cmd_keygen(out: &std::path::Path) -> Result<(), String> {
+/// Best-effort "a default route exists" probe: UDP connect() consults the
+/// routing table only — no packets are sent. This CANNOT prove a machine
+/// is offline (hotspots, VM bridges, hidden interfaces, or a compromised
+/// host all evade it); it is a self-discipline check, not a security claim.
+fn network_route_detected() -> bool {
+    std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| s.connect("8.8.8.8:53"))
+        .is_ok()
+}
+
+/// Read one line from stdin; empty input falls back to `default`.
+/// Prompts go to stderr so stdout stays clean for pipeable output.
+fn prompt(label: &str, default: &str) -> Result<String, String> {
+    use std::io::Write;
+    if default.is_empty() {
+        eprint!("{label}: ");
+    } else {
+        eprint!("{label} [{default}]: ");
+    }
+    std::io::stderr().flush().map_err(|e| e.to_string())?;
+    let mut s = String::new();
+    if std::io::stdin()
+        .read_line(&mut s)
+        .map_err(|e| e.to_string())?
+        == 0
+    {
+        return Err("EOF on stdin — use subcommand arguments for non-interactive use".into());
+    }
+    let s = s.trim();
+    Ok(if s.is_empty() {
+        default.to_string()
+    } else {
+        s.to_string()
+    })
+}
+
+fn prompt_path(label: &str, default: &str) -> Result<PathBuf, String> {
+    Ok(PathBuf::from(prompt(label, default)?))
+}
+
+fn prompt_opt(label: &str) -> Result<Option<PathBuf>, String> {
+    let s = prompt(label, "")?;
+    Ok(if s.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(s))
+    })
+}
+
+/// Bare `tron-tool` → guided menu covering the full buyer flow.
+fn interactive() -> Result<bool, String> {
+    eprintln!("tron-tool — split-key vanity buyer tool · 交互模式 interactive");
+    eprintln!("  1) keygen  生成买家密钥 b → 0600 文件 + 公钥 B");
+    eprintln!("  2) order   签名订单 → .tronorder + 指纹 H");
+    eprintln!("  3) redeem  验收交付包 → 导出私钥 + 收款 QR");
+    eprintln!("  4) sign    TIP-191 签名声明");
+    eprintln!("  5) verify  验证 TIP-191 签名");
+    eprintln!("  q) quit    退出");
+    match prompt("choose 选择", "1")?.as_str() {
+        "1" | "keygen" => {
+            let out = prompt_path("b output file 密钥输出文件", "b.key")?;
+            let ro = matches!(
+                prompt("offline self-check 断网自检 (y/N)", "N")?.as_str(),
+                "y" | "Y" | "yes"
+            );
+            cmd_keygen(&out, ro).map(|_| true)
+        }
+        "2" | "order" => {
+            let key = prompt_path("key file (b) 密钥文件", "b.key")?;
+            eprintln!("  patterns: repeat:4 ~ repeat:8 — 尾号重复位数，价格以提交后显示为准");
+            let pattern = prompt("pattern", "repeat:6")?;
+            let out = prompt_path("order out 订单输出文件", "my.tronorder")?;
+            cmd_order(&key, &pattern, &out).map(|_| true)
+        }
+        "3" | "redeem" => {
+            let package = prompt_path("package file 交付包", "pkg.tronspk")?;
+            let key = prompt_path("key file (b) 密钥文件", "b.key")?;
+            eprintln!("  expect-pattern 必须与你本地订单记录一致 / must match YOUR order record");
+            let expect = prompt("expect-pattern", "repeat:6")?;
+            let export = prompt_opt("export priv to file 导出私钥 (空=不导出)")?;
+            let out = prompt_opt("QR image out 收款QR图片 (空=终端显示)")?;
+            cmd_redeem(&package, &key, &expect, export, 60, out).map(|_| true)
+        }
+        "4" | "sign" => {
+            let key = prompt_path("key file (b 或 priv)", "priv.key")?;
+            let message = prompt("message 声明文本", "")?;
+            cmd_sign(&key, &message).map(|_| true)
+        }
+        "5" | "verify" => {
+            let address = prompt("address 地址", "")?;
+            let message = prompt("message 声明文本", "")?;
+            let signature = prompt("signature 签名 (0x+130hex)", "")?;
+            cmd_verify(&address, &message, &signature)
+        }
+        _ => Ok(true),
+    }
+}
+
+fn cmd_keygen(out: &std::path::Path, require_offline: bool) -> Result<(), String> {
     if out.exists() {
         // Overwriting a live b file destroys the order — refuse silently.
         return Err(format!("{} exists — refusing to overwrite", out.display()));
+    }
+    if require_offline && network_route_detected() {
+        return Err(
+            "--require-offline: a network route was detected — disconnect networking and retry \
+             (best-effort self-check; it cannot prove the machine is offline)\n\
+             检测到网络路由，已按 --require-offline 拒绝生成——请断网后重试（自检非安全保证）"
+                .into(),
+        );
     }
     let b = scalar::generate_scalar(); // CSPRNG rejection sampling (§3)
     let b_point = point::pubkey_from_secret(&b)?;
@@ -128,7 +243,10 @@ fn cmd_keygen(out: &std::path::Path) -> Result<(), String> {
     println!("{}", point::pubkey_compressed_hex(&b_point));
     eprintln!(
         "wrote b to {} (mode 0600) — back it up now: losing b forfeits the order\n\
-         备份 b 文件：丢失 = 订单全损，卖家也无法恢复",
+         备份 b 文件：丢失 = 订单全损，卖家也无法恢复\n\
+         For higher assurance generate on an offline / trusted machine \
+         (self-check: --require-offline).\n\
+         更高保障请在离线/可信机器上生成 b（自检开关 --require-offline）",
         out.display()
     );
     Ok(())

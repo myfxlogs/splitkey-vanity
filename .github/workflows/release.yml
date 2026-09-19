@@ -15,8 +15,14 @@ jobs:
         include:
           - os: ubuntu-latest
             plat: linux-x86_64
+          - os: ubuntu-24.04-arm
+            plat: linux-aarch64
           - os: windows-latest
             plat: windows-x86_64
+          - os: macos-13
+            plat: macos-x86_64
+          - os: macos-14
+            plat: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,10 +30,10 @@ jobs:
         run: rustup default stable
       - name: Build
         run: cargo build --release --locked
-      - name: Package (linux)
-        if: runner.os == 'Linux'
+      - name: Package (unix)
+        if: runner.os != 'Windows'
         run: |
-          pkg="tron-tool-${GITHUB_REF_NAME}-linux-x86_64"
+          pkg="tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}"
           mkdir "$pkg"
           cp target/release/tron-tool "$pkg"/
           tar czf "$pkg.tar.gz" "$pkg"
@@ -35,15 +41,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $pkg = "tron-tool-$env:GITHUB_REF_NAME-windows-x86_64"
+          $pkg = "tron-tool-$env:GITHUB_REF_NAME-${{ matrix.plat }}"
           New-Item -ItemType Directory $pkg | Out-Null
           Copy-Item target/release/tron-tool.exe "$pkg/"
           Compress-Archive "$pkg" "$pkg.zip"
-      - name: Smoke (linux)
-        if: runner.os == 'Linux'
+      - name: Smoke (unix)
+        if: runner.os != 'Windows'
         run: |
-          tar xf "tron-tool-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
-          got="$("./tron-tool-${GITHUB_REF_NAME}-linux-x86_64/tron-tool" --version)"
+          tar xf "tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}.tar.gz"
+          got="$("./tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}/tron-tool" --version)"
           want="tron-tool ${GITHUB_REF_NAME#v}"
           echo "got: $got / want: $want"
           [ "$got" = "$want" ]
@@ -55,10 +61,10 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --generate-notes || true
           if [ "$RUNNER_OS" = "Windows" ]; then
             gh release upload "$GITHUB_REF_NAME" \
-              "tron-tool-${GITHUB_REF_NAME}-windows-x86_64.zip" --clobber
+              "tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}.zip" --clobber
           else
             gh release upload "$GITHUB_REF_NAME" \
-              "tron-tool-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" --clobber
+              "tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}.tar.gz" --clobber
           fi
   sums:
     needs: build
