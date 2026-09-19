@@ -9,9 +9,17 @@ statement ("this is my official address").
 ## 1. Signing
 
 ```
-digest = keccak256( "\x19TRON Signed Message:\n" ‖ decimal(len(msg)) ‖ msg )
-sig    = secp256k1_sign(digest, privkey)   // 65 bytes: r ‖ s ‖ v (v = 27/28)
+digest = keccak256( "\x19TRON Signed Message:\n" ‖ decimal(len_bytes(msg)) ‖ msg )
+sig    = secp256k1_sign(digest, privkey)   // 65 bytes: r ‖ s ‖ v
 ```
+
+`len_bytes(msg)` is the **UTF-8 byte length** of the message, NOT the
+character count — a Chinese statement has byte length ≈ 3× its character
+count; using character count produces a different digest and breaks
+cross-tool verification.
+
+`v` is the ECDSA recovery id. TronWeb convention emits `27/28`;
+implementations SHOULD accept `0/1` and normalize by adding 27.
 
 Output: `0x`-prefixed hex, 132 characters.
 
