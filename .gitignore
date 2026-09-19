@@ -1,2 +1,20 @@
 /target
+
+# ── 治理/私有文档（本项目禁传 GitHub，误复制进来也拒收）──
+AGENTS.md
+AUDIT_GATE.md
+DESIGN.md
+STATE.md
+decisions.md
+立项清单.md
+audit-*.md
+review*.md
+.devin/
+docs/
+
+# ── 秘密材料（永不入库）──
 *.key
+*.pem
+*.tronorder
+keys/
+secrets/
