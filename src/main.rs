@@ -117,6 +117,13 @@ fn main() -> ExitCode {
 }
 
 fn cmd_keygen(out: &std::path::Path) -> Result<(), String> {
+    if out.exists() {
+        // Overwriting a live b file destroys the order — refuse silently.
+        return Err(format!(
+            "{} exists — refusing to overwrite a key file",
+            out.display()
+        ));
+    }
     let b = scalar::generate_scalar(); // CSPRNG rejection sampling (§3)
     let b_point = point::pubkey_from_secret(&b)?;
     scalar::write_scalar_file(out, &b).map_err(|e| format!("write {}: {e}", out.display()))?;
@@ -170,6 +177,9 @@ fn cmd_redeem(
     out: Option<PathBuf>,
 ) -> Result<(), String> {
     let expect = Pattern::parse(expect_pattern)?;
+    if expect.needs_reachability_warning() {
+        eprintln!("warning: {expect} is effectively undeliverable (§3.1 reachability, n ≥ 29)");
+    }
     let data = std::fs::read(package_path)
         .map_err(|e| format!("cannot read {}: {e}", package_path.display()))?;
     let pkg = package::parse(&data)?; // signature verified before anything else
