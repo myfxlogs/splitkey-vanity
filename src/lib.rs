@@ -6,8 +6,13 @@
 // and never leaves this machine.
 
 pub mod addr;
+pub mod devkey;
+pub mod order;
+pub mod package;
 pub mod pattern;
 pub mod point;
+pub mod qr;
+pub mod redeem;
 pub mod scalar;
 
 use std::io;
