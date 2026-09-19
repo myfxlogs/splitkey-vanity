@@ -14,13 +14,22 @@ without the buyer's secret `b` (see `split-key.md`).
 | 8 | 2 | version | `0x0001` little-endian |
 | 10 | 4 | signer_key_id | identifies the Ed25519 public key embedded in the verifier |
 | 14 | 2 | pattern_len | little-endian, bytes |
-| 16 | N | pattern | UTF-8 pattern string (order spec) |
+| 16 | N | pattern | UTF-8 pattern string; grammar per `split-key.md` §3.1 |
 | 16+N | 33 | B | buyer's compressed secp256k1 public key |
 | 49+N | 32 | d | offset scalar, big-endian |
-| 81+N | 8 | timestamp | Unix seconds, little-endian |
+| 81+N | 8 | timestamp | Unix seconds, little-endian — see §1.1 |
 | 89+N | 64 | signature | Ed25519 over bytes `[0 .. 89+N)` |
 
 Total size: `153 + pattern_len` bytes.
+
+### 1.1 Field semantics
+
+- `pattern`: the order-agreed match pattern. v1 supports `repeat:<n>`
+  only (see `split-key.md` §3.1); unknown types MUST be rejected.
+- `timestamp`: **informational issue time only**. It is NOT used in
+  signature semantics, replay protection, or buyer-side verification;
+  it exists for order correlation and dispute evidence.
+- `B`, `d`: semantics per `split-key.md` §3–§5.
 
 ## 2. Signature
 
