@@ -19,7 +19,7 @@ jobs:
             plat: linux-aarch64
           - os: windows-latest
             plat: windows-x86_64
-          - os: macos-13
+          - os: macos-15-intel
             plat: macos-x86_64
           - os: macos-14
             plat: macos-arm64
