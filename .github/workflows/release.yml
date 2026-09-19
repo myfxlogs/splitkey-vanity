@@ -1,0 +1,75 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            plat: linux-x86_64
+          - os: windows-latest
+            plat: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup default stable
+      - name: Build
+        run: cargo build --release --locked
+      - name: Package (linux)
+        if: runner.os == 'Linux'
+        run: |
+          pkg="tron-tool-${GITHUB_REF_NAME}-linux-x86_64"
+          mkdir "$pkg"
+          cp target/release/tron-tool "$pkg"/
+          tar czf "$pkg.tar.gz" "$pkg"
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pkg = "tron-tool-${{ env:GITHUB_REF_NAME }}-windows-x86_64"
+          New-Item -ItemType Directory $pkg | Out-Null
+          Copy-Item target/release/tron-tool.exe "$pkg/"
+          Compress-Archive "$pkg" "$pkg.zip"
+      - name: Smoke (linux)
+        if: runner.os == 'Linux'
+        run: |
+          tar xf "tron-tool-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
+          got="$("./tron-tool-${GITHUB_REF_NAME}-linux-x86_64/tron-tool" --version)"
+          want="tron-tool ${GITHUB_REF_NAME#v}"
+          echo "got: $got / want: $want"
+          [ "$got" = "$want" ]
+      - name: Create release + upload artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes || true
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "tron-tool-${GITHUB_REF_NAME}-windows-x86_64.zip" --clobber
+          else
+            gh release upload "$GITHUB_REF_NAME" \
+              "tron-tool-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" --clobber
+          fi
+  sums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect artifacts + SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir assets
+          gh release download "$GITHUB_REF_NAME" --dir assets --pattern 'tron-tool-*'
+          cd assets
+          sha256sum tron-tool-* > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --clobber
