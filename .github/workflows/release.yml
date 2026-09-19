@@ -69,8 +69,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir assets
-          gh release download "$GITHUB_REF_NAME" --dir assets --pattern 'tron-tool-*'
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" \
+            --dir assets --pattern 'tron-tool-*'
           cd assets
           sha256sum tron-tool-* > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
-          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --clobber
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --clobber
