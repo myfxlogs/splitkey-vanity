@@ -24,8 +24,9 @@ enough to verify a delivery with any secp256k1 library.
 ## Modes / 模式
 
 ```
-tron-tool keygen              # 生成 (b, B)：B 提交给卖家，b 保密保存
-tron-tool redeem              # 收货：验签 → b+d 合并 → 地址比对 → 出私钥QR
+tron-tool keygen              # 生成 (b, B)：b 保密保存
+tron-tool order               # 用 b 签订单承诺 → 提交 {订单,签名} 给卖家
+tron-tool redeem              # 收货：验签 → 绑定/订单/模式三检 → 出私钥QR
 tron-tool sign                # 商户：TIP-191 签名收款地址声明
 tron-tool verify              # 验证签名（恢复地址比对）
 ```

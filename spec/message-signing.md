@@ -23,6 +23,16 @@ implementations SHOULD accept `0/1` and normalize by adding 27.
 
 Output: `0x`-prefixed hex, 132 characters.
 
+Normative signature requirements:
+
+- Signers MUST emit **low-s** signatures (`s ≤ n/2`) and `v ∈ {27,28}`.
+- Verifiers MUST accept `v ∈ {0,1,27,28}` (normalizing `0/1 → 27/28`)
+  and MUST reject any other `v` value.
+- Message length: SHOULD be ≤ 255 bytes. Longer messages verify fine in
+  pure-software paths, but the Ledger+TronWeb stack is known to fail
+  verification above 255 bytes — stay under it for ecosystem
+  compatibility.
+
 The `\x19` prefix prevents a signed message from ever being reinterpreted
 as a valid transaction (replay protection).
 
@@ -35,6 +45,16 @@ return addr' == claimed_address
 
 `tron-tool verify` prints the recovered address so the caller can compare
 visually as well as programmatically.
+
+## 2.1 Signer input format (normative)
+
+`tron-tool sign` reads a secret-key file in the canonical scalar format
+of `split-key.md` §7.1 (64 lowercase hex chars, `0600`, optional trailing
+newline). Because a `b` file and a `priv` file are byte-indistinguishable
+in this format, the tool MUST display the derived address of the loaded
+key — `signing as T…` — before emitting the signature, so a user who
+accidentally points `sign` at their `b` file sees `addr(B)` rather than
+silently publishing a statement for the wrong address.
 
 ## 3. Recommended statement contents
 

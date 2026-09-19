@@ -27,12 +27,18 @@ Buyer (offline, local)                Seller (GPU operator)
   material at every step.
 - **Non-secret delivery**: `d` is worthless without `b`. It may be
   transmitted in plaintext; confidentiality is not required.
-- **Tamper-evident order binding**: substituting `B` in transit yields an
-  offset that fails verification (denial of service only — nothing can be
-  stolen).
+- **Order binding requires the signed order (§8)**: a substituted `B`
+  yields an offset that fails the buyer's verification — but a bare,
+  unauthenticated `B` channel also lets a MITM submit *its own* `B'`,
+  harvest the seller's GPU work, and leave a dispute that cannot be
+  attributed (a valid package over `(pattern, B', d)` proves nothing
+  about which `B` the buyer sent). The signed order commitment in §8
+  closes this; without it, the channel is denial-of-service **plus**
+  theft of GPU work.
 - **Objective arbitration**: any third party can verify
-  `addr(B + d·G) == advertised_address` without secrets. Disputes are
-  decidable by public recomputation.
+  `addr(B + d·G) == advertised_address` without secrets. Combined with
+  the buyer-signed order (§8), disputes are decidable by public
+  recomputation and attributable to a party.
 
 ## 3. Data formats
 
@@ -56,6 +62,31 @@ Validation rules:
   `priv == 0` result MUST be rejected (probability ~2⁻²⁵⁶ but MUST be
   handled explicitly)
 
+Generation rule for `b` (normative): draw 32 bytes from the OS CSPRNG,
+interpret as a big-endian integer, and **reject-and-redraw** if the value
+is `0` or `≥ n` (rejection sampling; do NOT reduce mod `n`, which would
+bias the low end). Repeat until a valid scalar is obtained.
+
+### 3.2 TRON address derivation (normative)
+
+```
+addr = base58check( 0x41 ‖ keccak256(x ‖ y)[12..32] )
+```
+
+- `x`, `y`: the two 32-byte big-endian coordinates of the **uncompressed**
+  secp256k1 point — exactly 32 bytes each, zero-padded; the `0x04`
+  uncompressed-point prefix byte is NOT included (`x‖y` is 64 bytes).
+- `keccak256`: original Keccak-256, not NIST SHA3-256.
+- `base58check(payload)`: Bitcoin base58 alphabet
+  `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`;
+  checksum = first 4 bytes of `SHA256(SHA256(payload))`, appended before
+  base58 encoding.
+- The payload `0x41 ‖ 20 bytes` plus 4-byte checksum is 25 bytes; the
+  encoded result is always 34 characters and its first character is
+  always `'T'` (the version byte's value range maps to index 26). The
+  `'T'` is an emergent property of the encoding — implementations MUST
+  NOT prepend `'T'` manually.
+
 ### 3.1 Pattern grammar (normative)
 
 ```
@@ -66,6 +97,10 @@ value   := <n>                 ; for repeat: integer
 
 - `repeat:<n>` — address ends with ≥ `n` identical base58 characters
   (豹子号). Constraint: `4 ≤ n ≤ 34` (34-char base58check string).
+- `<n>` canonical form: decimal ASCII, no leading zeros. Emitters MUST
+  produce canonical form (`repeat:8`, not `repeat:08`). Parsers SHOULD
+  accept leading zeros but MUST compare patterns semantically as the
+  parsed `(type, n)` tuple — never by raw string equality.
 - Matching is on the full base58check string including the leading 'T'.
 - **Reserved (NOT implemented in v1)**: `prefix`, `suffix`, `contains`,
   custom-word patterns. Implementations MUST reject unknown types.
@@ -76,20 +111,33 @@ value   := <n>                 ; for repeat: integer
 
 ```
 priv = (b + d) mod n
-pub  = priv·G = B + d·G      // equivalent, both may be checked
-addr = TRON(pub)             // 'T' + base58check(0x41 ‖ keccak256(x‖y)[12..32])
+pub  = priv·G  ==  B + d·G   // deterministic equality — see check 0
+addr = base58check(0x41 ‖ keccak256(x‖y)[12..32])   // §3.2; yields 'T…'
 ```
 
-The tool MUST verify `addr == advertised_address` before displaying any
-private-key material.
+The redeem procedure takes **order context from the buyer**, never from
+the package alone: at least one of `--expect-pattern <ordered pattern>`
+or `--expect-address <ordered address>` MUST be supplied out-of-band
+(order record / listing / seller message). The package's own `pattern`
+field is seller-signed data — it describes what was delivered, not what
+was ordered, and MUST NOT be used as the acceptance criterion.
 
-The advertised address arrives **out-of-band** (order context: listing or
-seller message), not inside the package — the package only binds
-`(pattern, B, d)`. The tool MUST therefore:
+Verification steps, in order (all MUST, with distinct errors):
 
-1. check `addr` satisfies `pattern` (self-contained, package-backed), and
-2. when an advertised address is supplied, check `addr == advertised`,
-   and always display the derived address for eyeball comparison.
+0. **Binding check**: `priv·G == B_pkg + d·G`. Equality holds iff
+   `b·G == B_pkg` — i.e. this package was issued for *this* secret file.
+   Failure → `package not bound to this key file` (wrong package, wrong
+   key file, or corrupt `b`) — distinct from a pattern failure.
+1. **Order check**: if `--expect-pattern` given, `pattern_pkg` MUST equal
+   it as a parsed `(type, n)` tuple; if `--expect-address` given,
+   `addr == expect-address`. Failure → `order mismatch` (seller
+   delivered for different terms — e.g. `repeat:4` against a `repeat:9`
+   order).
+2. **Pattern check**: `addr` satisfies `pattern_pkg`. Failure →
+   `pattern mismatch` (package is invalid on its own terms).
+
+Only after all checks pass may the tool display the derived address and
+release any private-key material.
 
 ## 5. Verification (public)
 
@@ -105,7 +153,8 @@ No secret is required. This is the arbitration procedure.
 | Case | Result |
 |---|---|
 | Seller returns wrong `d` | Buyer-side check `addr(priv·G)` fails → reject, dispute |
-| `B` swapped in transit | Combined key derives wrong address → verification fails → no theft possible |
+| `B` swapped in transit | Without §8 order commitment: attacker harvests GPU work under own `B'`; dispute unattributable. With §8: seller rejects unsigned/forged order — DoS only |
+| Seller delivers for lesser pattern (`repeat:4` on `repeat:9` order) | Caught by §4 check 1 (`--expect-pattern`) — package's own pattern field is not the acceptance criterion |
 | Buyer loses `b` | `d` is useless; unrecoverable (buyer-side risk, disclosed) |
 | Buyer submits invalid `B` | Rejected at submission (parse check) |
 
@@ -128,3 +177,69 @@ The canonical at-rest representation of `b`:
   and validate `1 ≤ b < n`.
 - Rationale: a fixed trivial format keeps backup, recovery, and
   third-party reimplementation unambiguous.
+- The same 64-hex `0600` file format is the canonical at-rest form for
+  **any** bare scalar handled by the tool — including the final
+  `priv = (b + d) mod n` exported by `redeem`. Files containing `b` and
+  `priv` are byte-indistinguishable; tools MUST therefore display the
+  derived address of whatever key file is loaded (see
+  `message-signing.md`), and SHOULD keep `b` and `priv` in separate,
+  clearly named files.
+
+## 8. Order commitment (normative)
+
+A bare `B` channel is forgeable: anyone can submit any `B` and consume
+seller GPU time, and a MITM can replace the buyer's `B` with its own
+`B'` to harvest the result. Every order MUST therefore carry a
+buyer-side signature proving control of `b` at submission time.
+
+Canonical order message (UTF-8, exact bytes):
+
+```
+order = "TRONSPK-ORDER-v1" "|" pattern "|" B_hex
+```
+
+- `pattern`: canonical grammar per §3.1 (e.g. `repeat:8`).
+- `B_hex`: 66 lowercase hex characters of the compressed public key.
+
+Signature:
+
+```
+digest = keccak256( "\x19TRON Vanity Order:\n" ‖ decimal(len_bytes(order)) ‖ order )
+sig    = secp256k1_sign(digest, b)        // 65 bytes: r ‖ s ‖ v, low-s, v ∈ {27,28}
+```
+
+The dedicated `\x19TRON Vanity Order:` domain prefix prevents an order
+signature from being replayed as a TIP-191 statement or vice versa.
+Submission = `order` text + `0x`-hex `sig`.
+
+Seller-side procedure (MUST before spending GPU time):
+
+1. Parse `order`; reject malformed fields or unsupported patterns.
+2. Recover the public key from `(digest, sig)`; compress it; require
+   `recovered_compressed == B` from the order.
+3. Reject otherwise — unsigned or foreign-signed orders get no work.
+
+Dispute evidence: escrow/arbitration stores `{order, sig}` together with
+the delivered package. `package.B == order.B` links the two; the order
+signature proves which `B` the buyer committed, making MITM-swap,
+seller-swap, and buyer-false-claim distinguishable.
+
+## Appendix A. Test vector
+
+Generated by an independent implementation (`vanity`, Rust k256) and
+pinned by its test suite. Constants are asymmetric and `b + d > n` so
+the vector exercises big-endian encoding, point compression, and the
+mod-`n` wrap:
+
+```
+b    = 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+B    = 034646ae5047316b4230d0086c8acec687f00b1cd9d1dc634f6cb358ac0a9a8fff
+d    = fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+priv = 000000000000000000000000000000014551231950b75fc4402da1732fc9bebe
+addr = TSrCk3n9VDyDYtdGnTigc7mTLEUEGwcGPm
+```
+
+Checks: `B` is `b·G` compressed; `priv = (b + d) mod n`; and both
+`addr(priv·G)` (buyer path) and `addr(B + d·G)` (public/arbitration
+path) equal the address above — a conforming implementation must
+reproduce all five lines exactly.
