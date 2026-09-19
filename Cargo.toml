@@ -1,0 +1,26 @@
+[package]
+name = "tron-tool"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Buyer-side tool for split-key TRON vanity addresses"
+
+[dependencies]
+k256 = "0.13"           # secp256k1 (keys, ECDSA sign/recover, point math)
+sha3 = "0.10"           # Keccak-256 (TRON address hash, TIP-191/order digest)
+sha2 = "0.10"           # SHA-256 (Base58Check checksum)
+bs58 = "0.5"            # Base58Check (TRON address encoding)
+ed25519-dalek = { version = "=2.2.0", features = ["zeroize"] }  # TRONSPK1 package signatures
+getrandom = "0.2"       # OS CSPRNG
+zeroize = { version = "1", features = ["alloc"] }  # secret wiping
+subtle = "2"            # constant-time compares (package magic)
+qrcode = { version = "=0.14.1", default-features = false, features = ["image", "svg"] }
+image = { version = "=0.25.8", default-features = false, features = ["png"] }
+clap = { version = "=4.6.6", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
