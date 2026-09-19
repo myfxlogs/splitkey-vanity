@@ -243,6 +243,10 @@ Submission = `order` text + `0x`-hex `sig`.
   order obtained through any channel other than the escrow release;
   the escrow-stored `{order, sig}` — not the seller's inbox — is the
   arbitration record.
+- The order-emitting tool MUST compute and display `H` alongside the
+  `.tronorder` output. The payer SHOULD verify that the fingerprint
+  bound by the escrow equals the locally displayed `H` before
+  confirming payment — a mismatch means the order was substituted.
 
 Seller-side procedure (MUST before spending GPU time):
 
