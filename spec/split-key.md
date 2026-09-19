@@ -32,9 +32,12 @@ Buyer (offline, local)                Seller (GPU operator)
   unauthenticated `B` channel also lets a MITM submit *its own* `B'`,
   harvest the seller's GPU work, and leave a dispute that cannot be
   attributed (a valid package over `(pattern, B', d)` proves nothing
-  about which `B` the buyer sent). The signed order commitment in §8
-  closes this; without it, the channel is denial-of-service **plus**
-  theft of GPU work.
+  about which `B` the buyer sent). The signed order makes substitution
+  attributable (an escrow order not signed by the payer's key proves
+  substitution → refund); with the escrow payment binding of §8 the
+  residual is denial-of-service — without it the seller additionally
+  bears refundable GPU-theft loss (the attacker's order is itself
+  validly signed, so intake verification alone cannot reject it).
 - **Objective arbitration**: any third party can verify
   `addr(B + d·G) == advertised_address` without secrets. Combined with
   the buyer-signed order (§8), disputes are decidable by public
@@ -67,6 +70,37 @@ interpret as a big-endian integer, and **reject-and-redraw** if the value
 is `0` or `≥ n` (rejection sampling; do NOT reduce mod `n`, which would
 bias the low end). Repeat until a valid scalar is obtained.
 
+### 3.1 Pattern grammar (normative)
+
+```
+pattern := type ":" value
+type    := "repeat"            ; v1 ONLY supported type
+value   := <n>                 ; for repeat: integer
+```
+
+- `repeat:<n>` — address ends with ≥ `n` identical base58 characters
+  (豹子号). Constraint: `4 ≤ n ≤ 34` (34-char base58check string).
+- `<n>` canonical form: decimal ASCII, no leading zeros. Emitters MUST
+  produce canonical form (`repeat:8`, not `repeat:08`). Parsers SHOULD
+  accept leading zeros but MUST compare patterns semantically as the
+  parsed `(type, n)` tuple — never by raw string equality.
+- Matching is on the full base58check string including the leading 'T'.
+- `value` MUST NOT contain `'|'` — reserved delimiter of the §8 order
+  message (v1 integer values satisfy this by construction; future
+  pattern types inherit the constraint).
+- Reachability (verified): the `4 ≤ n ≤ 34` bound is syntactic only.
+  Addresses with ≥ 31 trailing identical characters provably do not
+  exist — all 58⁴ = 11,316,496 candidate strings exhaustively fail
+  base58check (the sole n = 34 candidate `T…T` has version byte 0x41
+  but fails the checksum; all 58 n = 33 candidates fail as well). For
+  n = 29/30 the expected number of existing addresses worldwide is
+  ≈ 0.06 / ≈ 10⁻³. Sellers SHOULD decline orders with n ≥ 29; buyer
+  tools SHOULD warn on n ≥ 29.
+- **Reserved (NOT implemented in v1)**: `prefix`, `suffix`, `contains`,
+  custom-word patterns. Implementations MUST reject unknown types.
+- Rationale: the seller-side matcher currently implements trailing-repeat
+  only. Spec must not promise capabilities the implementation lacks.
+
 ### 3.2 TRON address derivation (normative)
 
 ```
@@ -87,26 +121,6 @@ addr = base58check( 0x41 ‖ keccak256(x ‖ y)[12..32] )
   `'T'` is an emergent property of the encoding — implementations MUST
   NOT prepend `'T'` manually.
 
-### 3.1 Pattern grammar (normative)
-
-```
-pattern := type ":" value
-type    := "repeat"            ; v1 ONLY supported type
-value   := <n>                 ; for repeat: integer
-```
-
-- `repeat:<n>` — address ends with ≥ `n` identical base58 characters
-  (豹子号). Constraint: `4 ≤ n ≤ 34` (34-char base58check string).
-- `<n>` canonical form: decimal ASCII, no leading zeros. Emitters MUST
-  produce canonical form (`repeat:8`, not `repeat:08`). Parsers SHOULD
-  accept leading zeros but MUST compare patterns semantically as the
-  parsed `(type, n)` tuple — never by raw string equality.
-- Matching is on the full base58check string including the leading 'T'.
-- **Reserved (NOT implemented in v1)**: `prefix`, `suffix`, `contains`,
-  custom-word patterns. Implementations MUST reject unknown types.
-- Rationale: the seller-side matcher currently implements trailing-repeat
-  only. Spec must not promise capabilities the implementation lacks.
-
 ## 4. Key combination (buyer side)
 
 ```
@@ -115,12 +129,15 @@ pub  = priv·G  ==  B + d·G   // deterministic equality — see check 0
 addr = base58check(0x41 ‖ keccak256(x‖y)[12..32])   // §3.2; yields 'T…'
 ```
 
-The redeem procedure takes **order context from the buyer**, never from
-the package alone: at least one of `--expect-pattern <ordered pattern>`
-or `--expect-address <ordered address>` MUST be supplied out-of-band
-(order record / listing / seller message). The package's own `pattern`
-field is seller-signed data — it describes what was delivered, not what
-was ordered, and MUST NOT be used as the acceptance criterion.
+The redeem procedure takes **order context from the buyer's local order
+record** — the pattern given to `tron-tool order`. `--expect-pattern
+<ordered pattern>` is REQUIRED. Order context MUST NOT be taken from
+the package or from the delivery channel: a vanity order has no
+pre-known address (an exact-address order would require grinding a
+160-bit preimage, and a pattern order's address is unknown until `d`
+is found), so any address expectation originating with the seller is
+circular. The package's own `pattern` field is seller-signed data — it
+describes what was delivered, not what was ordered.
 
 Verification steps, in order (all MUST, with distinct errors):
 
@@ -128,13 +145,16 @@ Verification steps, in order (all MUST, with distinct errors):
    `b·G == B_pkg` — i.e. this package was issued for *this* secret file.
    Failure → `package not bound to this key file` (wrong package, wrong
    key file, or corrupt `b`) — distinct from a pattern failure.
-1. **Order check**: if `--expect-pattern` given, `pattern_pkg` MUST equal
-   it as a parsed `(type, n)` tuple; if `--expect-address` given,
-   `addr == expect-address`. Failure → `order mismatch` (seller
-   delivered for different terms — e.g. `repeat:4` against a `repeat:9`
-   order).
-2. **Pattern check**: `addr` satisfies `pattern_pkg`. Failure →
-   `pattern mismatch` (package is invalid on its own terms).
+1. **Order check**: the derived `addr` MUST satisfy `--expect-pattern`
+   (parsed `(type, n)` tuple semantics: `addr` ends with ≥ `n`
+   identical base58 characters). Failure → `order mismatch` (seller
+   delivered for different terms — e.g. a `repeat:4` result against a
+   `repeat:9` order). A `pattern_pkg` differing from the ordered
+   pattern is reported as a warning; it is not the acceptance
+   criterion.
+2. **Package self-consistency check**: `addr` satisfies `pattern_pkg`.
+   Failure → `pattern mismatch` (package invalid on its own terms —
+   dispute grounds even when check 1 passed).
 
 Only after all checks pass may the tool display the derived address and
 release any private-key material.
@@ -153,7 +173,7 @@ No secret is required. This is the arbitration procedure.
 | Case | Result |
 |---|---|
 | Seller returns wrong `d` | Buyer-side check `addr(priv·G)` fails → reject, dispute |
-| `B` swapped in transit | Without §8 order commitment: attacker harvests GPU work under own `B'`; dispute unattributable. With §8: seller rejects unsigned/forged order — DoS only |
+| `B` swapped in transit | Without §8: attacker harvests GPU work under own `B'` via a self-signed order; dispute unattributable. With §8 commitment: dispute attributable (escrow order signature ≠ payer's key → buyer refund). With §8 payment binding also enforced, attacker cannot ride the buyer's escrow — residual DoS |
 | Seller delivers for lesser pattern (`repeat:4` on `repeat:9` order) | Caught by §4 check 1 (`--expect-pattern`) — package's own pattern field is not the acceptance criterion |
 | Buyer loses `b` | `d` is useless; unrecoverable (buyer-side risk, disclosed) |
 | Buyer submits invalid `B` | Rejected at submission (parse check) |
@@ -212,6 +232,18 @@ The dedicated `\x19TRON Vanity Order:` domain prefix prevents an order
 signature from being replayed as a TIP-191 statement or vice versa.
 Submission = `order` text + `0x`-hex `sig`.
 
+- The digest is signed as-is — the signature primitive MUST NOT hash
+  the digest again (same convention as TIP-191).
+- Submission file (`.tronorder`): UTF-8 text, exactly two LF-separated
+  lines — line 1 the `order` text, line 2 the `0x`-prefixed 130-hex
+  `sig`; one trailing newline after line 2 is optional.
+- Payment binding (normative): an order is work-eligible only after the
+  escrow has bound the payer's funds to the order fingerprint
+  `H = keccak256(order)`. Sellers MUST NOT start the GPU search for an
+  order obtained through any channel other than the escrow release;
+  the escrow-stored `{order, sig}` — not the seller's inbox — is the
+  arbitration record.
+
 Seller-side procedure (MUST before spending GPU time):
 
 1. Parse `order`; reject malformed fields or unsupported patterns.
@@ -220,9 +252,14 @@ Seller-side procedure (MUST before spending GPU time):
 3. Reject otherwise — unsigned or foreign-signed orders get no work.
 
 Dispute evidence: escrow/arbitration stores `{order, sig}` together with
-the delivered package. `package.B == order.B` links the two; the order
-signature proves which `B` the buyer committed, making MITM-swap,
-seller-swap, and buyer-false-claim distinguishable.
+the delivered package, and the payer proves key control by signing a
+fresh arbitration challenge. `package.B == order.B` links the two. An
+escrow order whose signature key is not the payer's proves substitution
+→ buyer refund; MITM-swap and seller-swap leave identical evidence (an
+escrow order signed by a foreign key) and are not distinguishable from
+each other — both resolve to a buyer refund. What is distinguishable is
+a buyer false claim: escrow order and delivered package both bound to
+the payer-proven key defeats it.
 
 ## Appendix A. Test vector
 

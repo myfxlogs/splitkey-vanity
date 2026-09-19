@@ -62,7 +62,7 @@ A merchant statement SHOULD include: the full address, merchant name,
 and an issue/expiry date — bounding the signature's useful lifetime.
 
 ```
-"Official receive address: TWsbXR...55555555 — Merchant: X — Issued: 2026-09-18"
+"Official receive address: TWsbXR...55555555 — Merchant: X — Issued: 2026-09-18 — Expiry: 2027-09-18"
 ```
 
 ## 4. Scope and limitations
