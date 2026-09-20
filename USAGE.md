@@ -71,5 +71,6 @@ tron-tool redeem -p pkg.tronspk -k b.key -e 6 --export-priv priv.key -o qr.png
 | 忘了下单时的要求 | `tron-tool inspect -f my.tronorder`（或菜单选 `6`）查看 pattern/H/签名；售卖页查单也会显示「你的定制」 |
 | redeem 报 pattern 不符 | `-e` 必须填你下单时的 n，不是交付包里的字段 |
 | macOS 拦截未签名二进制 | `xattr -d com.apple.quarantine tron-tool` |
+| Windows SmartScreen 拦截 | 未签名新发布的正常提示：先验 SHA256（§0）→「更多信息」→「仍要运行」。SmartScreen blocks unsigned new releases: verify checksum first, then More info → Run anyway |
 
 完整文档见 `README.md`；协议规范可独立审计 `spec/`（github repo）。
