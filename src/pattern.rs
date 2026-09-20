@@ -27,7 +27,11 @@ impl Pattern {
             // Bare `<n>` input sugar — unambiguous: future pattern types
             // always carry a `type:` prefix.
             None if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => ("repeat", s),
-            None => return Err(format!("invalid pattern {s:?} (want `repeat:<n>` or `<n>`)")),
+            None => {
+                return Err(format!(
+                    "invalid pattern {s:?} (want `repeat:<n>` or `<n>`)"
+                ))
+            }
         };
         if ty != "repeat" {
             return Err(format!(
