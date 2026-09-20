@@ -119,8 +119,8 @@ pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
     let b_hex = fields.next().ok_or("order missing B field")?.to_string();
     let grant = if is_v2 {
         let g = fields.next().ok_or("v2 order missing grant field")?;
-        let parsed = crate::grant::Grant::parse(g)
-            .map_err(|e| format!("v2 order grant field: {e}"))?;
+        let parsed =
+            crate::grant::Grant::parse(g).map_err(|e| format!("v2 order grant field: {e}"))?;
         if parsed.pattern != pattern {
             return Err(format!(
                 "v2 order pattern {} != grant pattern {}",

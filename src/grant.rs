@@ -42,7 +42,9 @@ impl Grant {
     /// signature — call [`Grant::verify`].
     pub fn parse(s: &str) -> Result<Grant, String> {
         let s = s.trim();
-        let (p1, rest) = s.split_once('.').ok_or("grant: not a TG1.<..>.<..> string")?;
+        let (p1, rest) = s
+            .split_once('.')
+            .ok_or("grant: not a TG1.<..>.<..> string")?;
         let (p2, p3) = rest
             .split_once('.')
             .ok_or("grant: not a TG1.<..>.<..> string")?;
@@ -59,7 +61,10 @@ impl Grant {
             .into_vec()
             .map_err(|_| "grant: signature part is not bs58".to_string())?;
         if sig.len() != 64 {
-            return Err(format!("grant: signature must decode to 64 bytes, got {}", sig.len()));
+            return Err(format!(
+                "grant: signature must decode to 64 bytes, got {}",
+                sig.len()
+            ));
         }
         if body.len() < 4 {
             return Err("grant: payload part too short".into());
@@ -136,13 +141,16 @@ pub fn parse_payload(payload: &str) -> Result<(Pattern, String, u64, u64), Strin
     if f.next().is_some() {
         return Err("grant payload: extra fields".into());
     }
-    let pattern = Pattern::parse(pattern_str)
-        .map_err(|e| format!("grant payload pattern: {e}"))?;
+    let pattern = Pattern::parse(pattern_str).map_err(|e| format!("grant payload pattern: {e}"))?;
     if pattern.canonical() != pattern_str {
-        return Err(format!("grant payload: non-canonical pattern {pattern_str:?}"));
+        return Err(format!(
+            "grant payload: non-canonical pattern {pattern_str:?}"
+        ));
     }
     if nonce.len() != 16 || !nonce.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(format!("grant payload: nonce must be 16 hex chars, got {nonce:?}"));
+        return Err(format!(
+            "grant payload: nonce must be 16 hex chars, got {nonce:?}"
+        ));
     }
     let expiry_unix: u64 = expiry
         .parse()
@@ -234,7 +242,10 @@ mod tests {
             "suffix:8888|0123456789abcdef|1|1|x", // extra field
         ] {
             let g = Grant::issue(kid, payload, &sk).unwrap();
-            assert!(Grant::parse(&g).is_err(), "payload {payload:?} must be rejected");
+            assert!(
+                Grant::parse(&g).is_err(),
+                "payload {payload:?} must be rejected"
+            );
         }
     }
 }
