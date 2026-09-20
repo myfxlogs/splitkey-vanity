@@ -343,27 +343,32 @@ fn interactive() -> Result<bool, String> {
                     );
                 }
                 let slug = pattern_slug(&pattern);
-                let key = prompt_path(
-                    lang.t("b 密钥输出文件", "b output file"),
-                    &format!("b-{slug}.key"),
-                )?;
-                let ro = matches!(
-                    prompt(
-                        lang.t(
-                            "断网自检 offline self-check (y/N)",
-                            "offline self-check (y/N)"
-                        ),
-                        "N"
-                    )?
-                    .as_str(),
-                    "y" | "Y" | "yes"
-                );
-                cmd_keygen(&key, ro)?;
-                let out = prompt_path(
-                    lang.t("订单输出文件", "order output file"),
-                    &format!("{slug}.tronorder"),
-                )?;
-                cmd_order(&key, &pattern.canonical(), &out).map(|_| "3")
+                // Closure so a failed step (e.g. key file exists) lands in
+                // `next`'s Err branch — printed, menu continues — instead of
+                // escaping interactive() via `?`.
+                (|| {
+                    let key = prompt_path(
+                        lang.t("b 密钥输出文件", "b output file"),
+                        &format!("b-{slug}.key"),
+                    )?;
+                    let ro = matches!(
+                        prompt(
+                            lang.t(
+                                "断网自检 offline self-check (y/N)",
+                                "offline self-check (y/N)"
+                            ),
+                            "N"
+                        )?
+                        .as_str(),
+                        "y" | "Y" | "yes"
+                    );
+                    cmd_keygen(&key, ro)?;
+                    let out = prompt_path(
+                        lang.t("订单输出文件", "order output file"),
+                        &format!("{slug}.tronorder"),
+                    )?;
+                    cmd_order(&key, &pattern.canonical(), &out).map(|_| "3")
+                })()
             }
             "2" | "keygen" => {
                 let out = prompt_path(lang.t("b 密钥输出文件", "b output file"), "b.key")?;
@@ -591,8 +596,8 @@ fn cmd_order(key: &std::path::Path, pattern: &str, out: &std::path::Path) -> Res
     let pat = Pattern::parse(pattern)?;
     if pat.needs_reachability_warning() {
         eprintln!(
-            "warning: {} is effectively undeliverable (§3.1 reachability — \
-             expected work {:.2e})",
+            "warning: {} expects a very large search ({:.2e} iterations) — \
+             §3.1 reachability; sellers may decline or require confirmation",
             pat.canonical(),
             pat.expected_iterations()
         );

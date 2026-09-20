@@ -68,8 +68,10 @@ impl Pattern {
                 let k: u32 = value
                     .parse()
                     .map_err(|_| format!("invalid pair count {value:?}"))?;
-                if k < 2 {
-                    return Err(format!("pair count {k} out of range (need k ≥ 2)"));
+                // 2k chars must fit the 34-char address — and the bound
+                // also keeps the E-scale math overflow-free (2k, k−1 as i32).
+                if !(2..=17).contains(&k) {
+                    return Err(format!("pair count {k} out of range (need 2 ≤ k ≤ 17)"));
                 }
                 Pattern::Pair(k)
             }
@@ -278,8 +280,14 @@ mod tests {
         // E > 58^8 → parse-rejected (spec §3.1).
         // pair:8: 58^16 tails / 58·57^7 hits ≈ 58^8·(58/57)^7 > 58^8.
         assert!(Pattern::parse("pair:8").is_err());
-        // pair:7 ≈ 58^7·1.11 — allowed, warn band.
+        // pair:7 ≈ 4.2e10 ≈ 58^6·1.1 — allowed, warn band.
         assert!(Pattern::parse("pair:7").is_ok());
+        // k > 17 is rejected by the grammar bound (2k > 34 chars) — and
+        // must be rejected even when the value overflows the E-scale's
+        // i32 math (regression: pair:2147483648 once slipped through).
+        for bad in ["pair:18", "pair:34", "pair:2147483648", "pair:4294967295"] {
+            assert!(Pattern::parse(bad).is_err(), "{bad} must be rejected");
+        }
         // suffix len ≤ 8 → E ≤ 58^8, all allowed.
         assert!(Pattern::parse("suffix:12345678").is_ok());
     }

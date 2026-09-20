@@ -74,7 +74,7 @@ bias the low end). Repeat until a valid scalar is obtained.
 
 ```
 pattern := "repeat:" <n>          ; 4 ≤ n ≤ 34
-         | "pair:"   <k>          ; k ≥ 2 (bounded by reachability rule)
+         | "pair:"   <k>          ; 2 ≤ k ≤ 17 (2k ≤ 34 chars)
          | "alt:2"                ; fixed parameter
          | "suffix:" <s>          ; 2 ≤ len(s) ≤ 8
 <n> <k>  := decimal integer
