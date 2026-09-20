@@ -75,7 +75,8 @@ Run `tron-tool` with no arguments for the guided interactive menu —
 tron-tool                # 交互菜单：keygen / order / redeem / sign / verify
 ```
 
-Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out）：
+Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out；
+`-p`/`-e` 接受 `repeat:8` 或裸数字 `8`，交互模式输数字即可）：
 
 ```bash
 tron-tool keygen -o b.key                  # 生成买家秘密 b（0600），打印 B

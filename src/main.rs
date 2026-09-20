@@ -195,7 +195,7 @@ fn interactive() -> Result<bool, String> {
         }
         "2" | "order" => {
             let key = prompt_path("key file (b) 密钥文件", "b.key")?;
-            eprintln!("  patterns: repeat:4 ~ repeat:8 — 尾号重复位数，价格以提交后显示为准");
+            eprintln!("  patterns: 4 ~ 8 — 尾号重复位数，输数字即可 (e.g. 6)；价格以提交后显示为准");
             let pattern = prompt("pattern", "repeat:6")?;
             let out = prompt_path("order out 订单输出文件", "my.tronorder")?;
             cmd_order(&key, &pattern, &out).map(|_| true)

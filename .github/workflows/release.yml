@@ -35,7 +35,7 @@ jobs:
         run: |
           pkg="tron-tool-${GITHUB_REF_NAME}-${{ matrix.plat }}"
           mkdir "$pkg"
-          cp target/release/tron-tool "$pkg"/
+          cp target/release/tron-tool README.md USAGE.md LICENSE-MIT LICENSE-APACHE "$pkg"/
           tar czf "$pkg.tar.gz" "$pkg"
       - name: Package (windows)
         if: runner.os == 'Windows'
@@ -43,7 +43,7 @@ jobs:
         run: |
           $pkg = "tron-tool-$env:GITHUB_REF_NAME-${{ matrix.plat }}"
           New-Item -ItemType Directory $pkg | Out-Null
-          Copy-Item target/release/tron-tool.exe "$pkg/"
+          Copy-Item target/release/tron-tool.exe, README.md, USAGE.md, LICENSE-MIT, LICENSE-APACHE "$pkg/"
           Compress-Archive "$pkg" "$pkg.zip"
       - name: Smoke (unix)
         if: runner.os != 'Windows'

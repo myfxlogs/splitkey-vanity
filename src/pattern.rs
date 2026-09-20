@@ -15,15 +15,20 @@ pub enum Pattern {
 
 impl Pattern {
     /// Parse `type:value`. Accepts leading zeros in `<n>` (canonical emitters
-    /// never produce them); rejects unknown types, `|`, and out-of-range n.
+    /// never produce them) and a bare `<n>` as shorthand for `repeat:<n>`;
+    /// rejects unknown types, `|`, and out-of-range n.
     pub fn parse(s: &str) -> Result<Pattern, String> {
         let s = s.trim();
         if s.contains('|') {
             return Err("pattern must not contain '|' (reserved order delimiter)".into());
         }
-        let (ty, value) = s
-            .split_once(':')
-            .ok_or_else(|| format!("invalid pattern {s:?} (want `repeat:<n>`)"))?;
+        let (ty, value) = match s.split_once(':') {
+            Some((ty, value)) => (ty, value),
+            // Bare `<n>` input sugar — unambiguous: future pattern types
+            // always carry a `type:` prefix.
+            None if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => ("repeat", s),
+            None => return Err(format!("invalid pattern {s:?} (want `repeat:<n>` or `<n>`)")),
+        };
         if ty != "repeat" {
             return Err(format!(
                 "unknown pattern type {ty:?} (v1 supports `repeat` only)"
@@ -91,6 +96,16 @@ mod tests {
     }
 
     #[test]
+    fn bare_n_is_repeat_shorthand() {
+        // Buyer-facing input sugar: a bare integer means `repeat:<n>`.
+        assert_eq!(Pattern::parse("4").unwrap(), Pattern::Repeat(4));
+        assert_eq!(Pattern::parse("8").unwrap(), Pattern::Repeat(8));
+        assert_eq!(Pattern::parse("34").unwrap(), Pattern::Repeat(34));
+        assert_eq!(Pattern::parse(" 6 ").unwrap(), Pattern::Repeat(6));
+        assert_eq!(Pattern::parse("08").unwrap(), Pattern::Repeat(8));
+    }
+
+    #[test]
     fn rejects_illegal_forms() {
         for bad in [
             "prefix:abc",
@@ -103,6 +118,14 @@ mod tests {
             "repeat:4|x",
             "Repeat:8",
             "repeat:8:9",
+            "",
+            "0",
+            "3",
+            "35",
+            "-4",
+            "x",
+            "4|x",
+            "8:9",
         ] {
             assert!(Pattern::parse(bad).is_err(), "{bad} must be rejected");
         }

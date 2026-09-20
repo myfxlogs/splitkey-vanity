@@ -84,6 +84,9 @@ value   := <n>                 ; for repeat: integer
   produce canonical form (`repeat:8`, not `repeat:08`). Parsers SHOULD
   accept leading zeros but MUST compare patterns semantically as the
   parsed `(type, n)` tuple — never by raw string equality.
+- Input shorthand (non-wire): interactive/CLI parsers SHOULD also accept
+  a bare `<n>` as shorthand for `repeat:<n>`. Wire artifacts (order
+  text, package fields) always carry the canonical `repeat:<n>` form.
 - Matching is on the full base58check string including the leading 'T'.
 - `value` MUST NOT contain `'|'` — reserved delimiter of the §8 order
   message (v1 integer values satisfy this by construction; future
