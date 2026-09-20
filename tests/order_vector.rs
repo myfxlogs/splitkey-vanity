@@ -59,6 +59,37 @@ fn recovered_pubkey_equals_b() {
 }
 
 #[test]
+fn parse_order_file_pinned_vector() {
+    let data = format!("{ORDER}\n0x{SIG}\n").into_bytes();
+    let of = order::parse_order_file(&data).unwrap();
+    assert_eq!(of.order_text, ORDER);
+    assert_eq!(of.pattern, tron_tool::pattern::Pattern::Repeat(8));
+    assert_eq!(
+        of.b_hex,
+        "034646ae5047316b4230d0086c8acec687f00b1cd9d1dc634f6cb358ac0a9a8fff"
+    );
+    assert!(order::order_signature_ok(&of));
+
+    // Flip one signature byte → structural parse still works, crypto check fails.
+    let mut bad = data.clone();
+    let pos = bad.len() - 3;
+    bad[pos] = if bad[pos] == b'0' { b'1' } else { b'0' };
+    let of_bad = order::parse_order_file(&bad).unwrap();
+    assert!(!order::order_signature_ok(&of_bad));
+
+    for broken in [
+        b"".as_slice(),
+        b"\n".as_slice(),
+        format!("{ORDER}\n").as_bytes(),
+        format!("{ORDER}\n0x{SIG}\nextra\n").as_bytes(),
+        format!("WRONG-V|repeat:8|034646ae5047316b4230d0086c8acec687f00b1cd9d1dc634f6cb358ac0a9a8fff\n0x{SIG}\n").as_bytes(),
+        format!("{ORDER}|extra\n0x{SIG}\n").as_bytes(),
+    ] {
+        assert!(order::parse_order_file(broken).is_err(), "{broken:?} must be rejected");
+    }
+}
+
+#[test]
 fn scalar_file_roundtrip_0600() {
     let dir = std::env::temp_dir().join(format!("tron-tool-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

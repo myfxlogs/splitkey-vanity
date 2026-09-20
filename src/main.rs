@@ -90,6 +90,12 @@ enum Command {
         #[arg(short = 's', long)]
         signature: String,
     },
+    /// Show what a .tronorder file asks for: pattern, B, H, signature check.
+    Inspect {
+        /// .tronorder file to inspect.
+        #[arg(short = 'f', long)]
+        file: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -115,6 +121,7 @@ fn main() -> ExitCode {
             message,
             signature,
         }) => cmd_verify(&address, &message, &signature),
+        Some(Command::Inspect { file }) => cmd_inspect(&file),
     };
     match r {
         Ok(true) => ExitCode::SUCCESS,
@@ -175,54 +182,95 @@ fn prompt_opt(label: &str) -> Result<Option<PathBuf>, String> {
     })
 }
 
-/// Bare `tron-tool` → guided menu covering the full buyer flow.
+/// Bare `tron-tool` → guided menu covering the full buyer flow. Loops back
+/// to the menu after each action (errors print and re-prompt); a successful
+/// step pre-selects the natural next step. 'q' or stdin EOF exits.
 fn interactive() -> Result<bool, String> {
-    eprintln!("tron-tool — split-key vanity buyer tool · 交互模式 interactive");
-    eprintln!("  1) keygen  生成买家密钥 b → 0600 文件 + 公钥 B");
-    eprintln!("  2) order   签名订单 → .tronorder + 指纹 H");
-    eprintln!("  3) redeem  验收交付包 → 导出私钥 + 收款 QR");
-    eprintln!("  4) sign    TIP-191 签名声明");
-    eprintln!("  5) verify  验证 TIP-191 签名");
-    eprintln!("  q) quit    退出");
-    match prompt("choose 选择", "1")?.as_str() {
-        "1" | "keygen" => {
-            let out = prompt_path("b output file 密钥输出文件", "b.key")?;
-            let ro = matches!(
-                prompt("offline self-check 断网自检 (y/N)", "N")?.as_str(),
-                "y" | "Y" | "yes"
-            );
-            cmd_keygen(&out, ro).map(|_| true)
+    let mut suggest = "1";
+    let mut did_something = false;
+    loop {
+        eprintln!("tron-tool — split-key vanity buyer tool · 交互模式 interactive");
+        eprintln!("  1) keygen  生成买家密钥 b → 0600 文件 + 公钥 B");
+        eprintln!("  2) order   签名订单 → .tronorder + 指纹 H");
+        eprintln!("  3) redeem  验收交付包 → 导出私钥 + 收款 QR");
+        eprintln!("  4) sign    TIP-191 签名声明");
+        eprintln!("  5) verify  验证 TIP-191 签名");
+        eprintln!("  6) inspect 查看 .tronorder 内容（忘了定制要求看这里）");
+        eprintln!("  q) quit    退出");
+        let choice = match prompt("choose 选择", suggest) {
+            Ok(c) => c,
+            Err(e) if e.starts_with("EOF on stdin") => return Ok(did_something),
+            Err(e) => return Err(e),
+        };
+        let next = match choice.as_str() {
+            "1" | "keygen" => {
+                let out = prompt_path("b output file 密钥输出文件", "b.key")?;
+                let ro = matches!(
+                    prompt("offline self-check 断网自检 (y/N)", "N")?.as_str(),
+                    "y" | "Y" | "yes"
+                );
+                cmd_keygen(&out, ro).map(|_| "2")
+            }
+            "2" | "order" => {
+                let key = prompt_path("key file (b) 密钥文件", "b.key")?;
+                eprintln!(
+                    "  patterns: 4 ~ 8 — 尾号重复位数，输数字即可 (e.g. 6)；价格以提交后显示为准"
+                );
+                let pattern = prompt("pattern", "repeat:6")?;
+                let out = prompt_path("order out 订单输出文件", "my.tronorder")?;
+                cmd_order(&key, &pattern, &out).map(|_| "3")
+            }
+            "3" | "redeem" => {
+                let package = prompt_path("package file 交付包", "pkg.tronspk")?;
+                let key = prompt_path("key file (b) 密钥文件", "b.key")?;
+                eprintln!(
+                    "  expect-pattern 必须与你本地订单记录一致 / must match YOUR order record"
+                );
+                let order_path = prompt("order file 订单文件自动带出 pattern (空=手动输入)", "")?;
+                let mut expect_default = String::from("repeat:6");
+                if !order_path.is_empty() {
+                    match std::fs::read(&order_path)
+                        .map_err(|e| e.to_string())
+                        .and_then(|d| order::parse_order_file(&d))
+                    {
+                        Ok(of) => expect_default = of.pattern.canonical(),
+                        Err(e) => eprintln!("  订单文件读取失败 {e} — 请手动输入"),
+                    }
+                }
+                let expect = prompt("expect-pattern", &expect_default)?;
+                let export = prompt_opt("export priv to file 导出私钥 (空=不导出)")?;
+                let out = prompt_opt("QR image out 收款QR图片 (空=终端显示)")?;
+                cmd_redeem(&package, &key, &expect, export, 60, out).map(|_| "q")
+            }
+            "4" | "sign" => {
+                let key = prompt_path("key file (b 或 priv)", "priv.key")?;
+                let message = prompt("message 声明文本", "")?;
+                cmd_sign(&key, &message).map(|_| "q")
+            }
+            "5" | "verify" => {
+                let address = prompt("address 地址", "")?;
+                let message = prompt("message 声明文本", "")?;
+                let signature = prompt("signature 签名 (0x+130hex)", "")?;
+                cmd_verify(&address, &message, &signature).map(|_| "q")
+            }
+            "6" | "inspect" => {
+                let file = prompt_path("order file 订单文件", "my.tronorder")?;
+                cmd_inspect(&file).map(|_| "1")
+            }
+            "q" | "quit" | "exit" => return Ok(true),
+            _ => {
+                eprintln!("  unknown choice 无效选择 — 输入 1-6 或 q");
+                continue;
+            }
+        };
+        match next {
+            Ok(s) => {
+                suggest = s;
+                did_something = true;
+            }
+            Err(e) => eprintln!("error: {e}"),
         }
-        "2" | "order" => {
-            let key = prompt_path("key file (b) 密钥文件", "b.key")?;
-            eprintln!(
-                "  patterns: 4 ~ 8 — 尾号重复位数，输数字即可 (e.g. 6)；价格以提交后显示为准"
-            );
-            let pattern = prompt("pattern", "repeat:6")?;
-            let out = prompt_path("order out 订单输出文件", "my.tronorder")?;
-            cmd_order(&key, &pattern, &out).map(|_| true)
-        }
-        "3" | "redeem" => {
-            let package = prompt_path("package file 交付包", "pkg.tronspk")?;
-            let key = prompt_path("key file (b) 密钥文件", "b.key")?;
-            eprintln!("  expect-pattern 必须与你本地订单记录一致 / must match YOUR order record");
-            let expect = prompt("expect-pattern", "repeat:6")?;
-            let export = prompt_opt("export priv to file 导出私钥 (空=不导出)")?;
-            let out = prompt_opt("QR image out 收款QR图片 (空=终端显示)")?;
-            cmd_redeem(&package, &key, &expect, export, 60, out).map(|_| true)
-        }
-        "4" | "sign" => {
-            let key = prompt_path("key file (b 或 priv)", "priv.key")?;
-            let message = prompt("message 声明文本", "")?;
-            cmd_sign(&key, &message).map(|_| true)
-        }
-        "5" | "verify" => {
-            let address = prompt("address 地址", "")?;
-            let message = prompt("message 声明文本", "")?;
-            let signature = prompt("signature 签名 (0x+130hex)", "")?;
-            cmd_verify(&address, &message, &signature)
-        }
-        _ => Ok(true),
+        eprintln!();
     }
 }
 
@@ -354,4 +402,25 @@ fn cmd_verify(address: &str, message: &str, signature: &str) -> Result<bool, Str
     let matched = recovered_addr == address.trim();
     println!("{matched}");
     Ok(matched)
+}
+
+fn cmd_inspect(path: &std::path::Path) -> Result<bool, String> {
+    let data = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let of = order::parse_order_file(&data)?;
+    println!("pattern   : {}", of.pattern.canonical());
+    println!("B         : {}", of.b_hex);
+    println!(
+        "H         : {}",
+        tron_tool::hex_encode(&order::order_fingerprint(&of.order_text))
+    );
+    let ok = order::order_signature_ok(&of);
+    println!(
+        "signature : {}",
+        if ok {
+            "OK — recovers to B 签名有效"
+        } else {
+            "MISMATCH — 签名无效，文件被改或损坏"
+        }
+    );
+    Ok(ok)
 }

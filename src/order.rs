@@ -70,6 +70,63 @@ pub fn sign_digest(
     Ok(out)
 }
 
+/// Parsed `.tronorder` file (§8): order text + buyer signature.
+pub struct OrderFile {
+    pub order_text: String,
+    pub pattern: crate::pattern::Pattern,
+    /// Compressed-pubkey B as written in the order text (lowercase hex).
+    pub b_hex: String,
+    pub signature: [u8; 65],
+}
+
+/// Parse a `.tronorder` file: `<order_text>\n0x<130-hex sig>\n` — exactly
+/// two lines. Structural parse only; call [`order_signature_ok`] for the
+/// cryptographic check.
+pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
+    let text = std::str::from_utf8(data).map_err(|_| "order file is not UTF-8".to_string())?;
+    let mut lines = text.lines();
+    let order_text = lines.next().ok_or("order file is empty")?.to_string();
+    let sig_line = lines
+        .next()
+        .ok_or("order file missing signature line")?
+        .trim();
+    if lines.next().is_some() {
+        return Err("order file has extra lines".into());
+    }
+    let mut fields = order_text.split('|');
+    if fields.next() != Some(ORDER_VERSION) {
+        return Err(format!("not a {ORDER_VERSION} order"));
+    }
+    let pattern =
+        crate::pattern::Pattern::parse(fields.next().ok_or("order missing pattern field")?)?;
+    let b_hex = fields.next().ok_or("order missing B field")?.to_string();
+    if fields.next().is_some() {
+        return Err("order text has extra fields".into());
+    }
+    crate::point::parse_pubkey_compressed(&b_hex)?;
+    let sig_bytes = crate::hex_decode(crate::strip_0x(sig_line), Some(65))
+        .map_err(|e| format!("invalid signature encoding: {e}"))?;
+    let mut signature = [0u8; 65];
+    signature.copy_from_slice(&sig_bytes);
+    Ok(OrderFile {
+        order_text,
+        pattern,
+        b_hex,
+        signature,
+    })
+}
+
+/// ecrecover(sig, order_digest) == B — the §8 buyer-signature check.
+pub fn order_signature_ok(of: &OrderFile) -> bool {
+    let (Ok(recovered), Ok(b)) = (
+        recover_pubkey(&order_digest(&of.order_text), &of.signature),
+        crate::point::parse_pubkey_compressed(&of.b_hex),
+    ) else {
+        return false;
+    };
+    recovered.as_affine() == &b
+}
+
 /// Recover the verifying key from (digest, r‖s‖v). Verifiers accept
 /// v ∈ {0,1,27,28} (normalizing 0/1) and MUST reject any other value.
 pub fn recover_pubkey(digest: &[u8; 32], sig: &[u8]) -> Result<VerifyingKey, String> {

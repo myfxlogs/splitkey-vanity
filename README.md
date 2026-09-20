@@ -69,7 +69,7 @@ Or build from source: `cargo build --release`（stable Rust）。
 ## Quickstart / 快速上手
 
 Run `tron-tool` with no arguments for the guided interactive menu —
-每一步都有默认值与中文提示，无需记参数：
+每一步都有默认值与中文提示，完成一步自动回到菜单并预选下一步，无需记参数：
 
 ```bash
 tron-tool                # 交互菜单：keygen / order / redeem / sign / verify
@@ -123,6 +123,7 @@ The binary is `tron-tool`. Bare invocation opens the interactive menu
 | `redeem -p <f> -k <f> -e 'repeat:<n>'` | ✅ | 收货：验签 → 绑定/订单/自洽三检 → 导出私钥 + QR |
 | `sign -k <f> -m <m>` | ✅ | 商户：TIP-191 签名收款地址声明 |
 | `verify -a <a> -m <m> -s <s>` | ✅ | 验证签名（恢复地址比对） |
+| `inspect -f <f>` | ✅ | 查看 `.tronorder`：pattern/B/H + 签名校验（忘了定制要求用它） |
 
 The seller-side GPU generator and packaging tools are a separate,
 private implementation — under split-key the seller's code has zero

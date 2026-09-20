@@ -68,6 +68,7 @@ tron-tool redeem -p pkg.tronspk -k b.key -e 6 --export-priv priv.key -o qr.png
 |---|---|
 | `invalid pattern "6"` | 旧版本只认 `repeat:6`——升级到 v1.0.3+ 后数字直输即可 |
 | `refusing to overwrite` | 输出文件已存在，换文件名或先移走旧文件（防误覆盖设计） |
+| 忘了下单时的要求 | `tron-tool inspect -f my.tronorder`（或菜单选 `6`）查看 pattern/H/签名；售卖页查单也会显示「你的定制」 |
 | redeem 报 pattern 不符 | `-e` 必须填你下单时的 n，不是交付包里的字段 |
 | macOS 拦截未签名二进制 | `xattr -d com.apple.quarantine tron-tool` |
 
