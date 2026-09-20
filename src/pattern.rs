@@ -306,7 +306,9 @@ mod tests {
         assert!(Pattern::parse("suffix:7777777")
             .unwrap()
             .needs_reachability_warning());
-        assert!(Pattern::parse("pair:7").unwrap().needs_reachability_warning());
+        assert!(Pattern::parse("pair:7")
+            .unwrap()
+            .needs_reachability_warning());
     }
 
     #[test]
