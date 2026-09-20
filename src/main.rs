@@ -264,73 +264,51 @@ fn pattern_slug(pattern: &Pattern) -> String {
 }
 
 /// Bare `tron-tool` → guided menu covering the full buyer flow. Language is
-/// picked once at launch, then the customization (pattern) — generated file
-/// names derive from it (`b-repeat6.key` / `repeat6.tronorder`) so key and
-/// order stay paired by name. Loops back after each action; a successful
-/// step pre-selects the natural next step. 'q' or stdin EOF exits.
+/// picked once at launch (1=English, 2=中文), then a sibling menu: new
+/// order / keygen / redeem are independent entries — pattern is only asked
+/// inside the new-order path, and generated file names derive from it
+/// (`b-repeat6.key` / `repeat6.tronorder`). Loops back after each action;
+/// a successful step pre-selects the natural next step. 'q' or stdin EOF
+/// exits.
 fn interactive() -> Result<bool, String> {
-    let lang = match prompt("Language 语言 (1=中文, 2=English)", "1") {
-        Ok(c) if c == "2" => Lang::En,
-        Ok(_) => Lang::Zh,
+    let lang = match prompt("Language 语言 (1=English, 2=中文)", "1") {
+        Ok(c) if c == "2" => Lang::Zh,
+        Ok(_) => Lang::En,
         Err(e) if e.starts_with("EOF on stdin") => return Ok(false),
         Err(e) => return Err(e),
-    };
-    let mut cur: Pattern = loop {
-        let p = match prompt(
-            lang.t(
-                "定制 pattern — 尾号重复位数 4~8 输数字即可",
-                "customization pattern — tail repeat digits 4~8, bare digit ok",
-            ),
-            "6",
-        ) {
-            Ok(p) => p,
-            Err(e) if e.starts_with("EOF on stdin") => return Ok(false),
-            Err(e) => return Err(e),
-        };
-        match Pattern::parse(&p) {
-            Ok(pat) => break pat,
-            Err(e) => {
-                eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern"))
-            }
-        }
     };
     let mut suggest = "1";
     let mut did_something = false;
     loop {
-        let slug = pattern_slug(&cur);
         eprintln!("tron-tool — split-key vanity buyer tool");
         for line in [
             lang.t(
-                "  1) keygen  生成买家密钥 b → 0600 文件 + 公钥 B",
-                "  1) keygen  generate buyer secret b → 0600 file + pubkey B",
+                "  1) new order  新订单（生成密钥 b → 选 pattern → 签名 .tronorder）",
+                "  1) new order  (generate b → pick pattern → sign .tronorder)",
             ),
             lang.t(
-                "  2) order   签名订单 → .tronorder + 指纹 H",
-                "  2) order   sign order → .tronorder + fingerprint H",
+                "  2) keygen     仅生成买家密钥 b → 0600 文件 + 公钥 B",
+                "  2) keygen     generate buyer secret b only → 0600 file + pubkey B",
             ),
             lang.t(
-                "  3) redeem  验收交付包 → 导出私钥 + 私钥二维码",
-                "  3) redeem  accept delivery package → export priv + priv QR",
+                "  3) redeem     验收交付包 → 导出私钥 + 私钥二维码",
+                "  3) redeem     accept delivery package → export priv + priv QR",
             ),
             lang.t(
-                "  4) sign    TIP-191 签名声明",
-                "  4) sign    TIP-191 statement",
+                "  4) sign       TIP-191 签名声明",
+                "  4) sign       TIP-191 statement",
             ),
             lang.t(
-                "  5) verify  验证 TIP-191 签名",
-                "  5) verify  check TIP-191 signature",
+                "  5) verify     验证 TIP-191 签名",
+                "  5) verify     check TIP-191 signature",
             ),
             lang.t(
-                "  6) inspect 查看 .tronorder 内容（忘了定制要求看这里）",
-                "  6) inspect view .tronorder (forgot your pattern? look here)",
+                "  6) inspect    查看 .tronorder 内容（忘了定制要求看这里）",
+                "  6) inspect    view .tronorder (forgot your pattern? look here)",
             ),
-            lang.t(
-                "  7) pattern 更换定制（当前 {slug} → b-{slug}.key / {slug}.tronorder）",
-                "  7) pattern change customization (now {slug} → b-{slug}.key / {slug}.tronorder)",
-            ),
-            lang.t("  q) quit    退出", "  q) quit    exit"),
+            lang.t("  q) quit       退出", "  q) quit       exit"),
         ] {
-            eprintln!("{}", line.replace("{slug}", &slug));
+            eprintln!("{}", line);
         }
         let choice = match prompt(lang.t("choose 选择", "choose"), suggest) {
             Ok(c) => c,
@@ -338,9 +316,37 @@ fn interactive() -> Result<bool, String> {
             Err(e) => return Err(e),
         };
         let next = match choice.as_str() {
-            "1" | "keygen" => {
-                let def = format!("b-{slug}.key");
-                let out = prompt_path(lang.t("b 密钥输出文件", "b output file"), &def)?;
+            "1" | "new" | "order" => {
+                // New-order path: pattern determines file names — ask it
+                // first (with reachability warning), then keygen, then
+                // sign the order.
+                let pattern = loop {
+                    let p = prompt(
+                        lang.t(
+                            "定制 pattern（repeat:<n> / pair:<k> / alt:2 / suffix:<s>；尾号重复 4~8 输数字即可）",
+                            "pattern (repeat:<n> / pair:<k> / alt:2 / suffix:<s>; bare digit 4~8 = tail repeat)",
+                        ),
+                        "6",
+                    )?;
+                    match Pattern::parse(&p) {
+                        Ok(pat) => break pat,
+                        Err(e) => eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern")),
+                    }
+                };
+                if pattern.needs_reachability_warning() {
+                    eprintln!(
+                        "{}",
+                        lang.t(
+                            "  警告：该 pattern 预期搜索量过大，交付可能极慢（§3.1 可达性）",
+                            "  warning: this pattern expects a very large search (§3.1 reachability)"
+                        )
+                    );
+                }
+                let slug = pattern_slug(&pattern);
+                let key = prompt_path(
+                    lang.t("b 密钥输出文件", "b output file"),
+                    &format!("b-{slug}.key"),
+                )?;
                 let ro = matches!(
                     prompt(
                         lang.t(
@@ -352,23 +358,27 @@ fn interactive() -> Result<bool, String> {
                     .as_str(),
                     "y" | "Y" | "yes"
                 );
-                cmd_keygen(&out, ro).map(|_| "2")
+                cmd_keygen(&key, ro)?;
+                let out = prompt_path(
+                    lang.t("订单输出文件", "order output file"),
+                    &format!("{slug}.tronorder"),
+                )?;
+                cmd_order(&key, &pattern.canonical(), &out).map(|_| "3")
             }
-            "2" | "order" => {
-                let def_key = format!("b-{slug}.key");
-                let key = prompt_path(lang.t("密钥文件 (b)", "key file (b)"), &def_key)?;
-                let pattern = loop {
-                    let p = prompt("pattern", &cur.canonical())?;
-                    match Pattern::parse(&p) {
-                        Ok(pat) => break pat,
-                        Err(e) => eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern")),
-                    }
-                };
-                cur = pattern;
-                let slug = pattern_slug(&cur);
-                let def_out = format!("{slug}.tronorder");
-                let out = prompt_path(lang.t("订单输出文件", "order output file"), &def_out)?;
-                cmd_order(&key, &cur.canonical(), &out).map(|_| "3")
+            "2" | "keygen" => {
+                let out = prompt_path(lang.t("b 密钥输出文件", "b output file"), "b.key")?;
+                let ro = matches!(
+                    prompt(
+                        lang.t(
+                            "断网自检 offline self-check (y/N)",
+                            "offline self-check (y/N)"
+                        ),
+                        "N"
+                    )?
+                    .as_str(),
+                    "y" | "Y" | "yes"
+                );
+                cmd_keygen(&out, ro).map(|_| "1")
             }
             "3" | "redeem" => {
                 // Auto-discover: scan cwd for .tronspk → parse → its (pattern, B)
@@ -516,35 +526,20 @@ fn interactive() -> Result<bool, String> {
                 cmd_verify(&address, &message, &signature).map(|_| "q")
             }
             "6" | "inspect" => {
-                let file = prompt_path(
-                    lang.t("订单文件", "order file"),
-                    &format!("{slug}.tronorder"),
-                )?;
-                cmd_inspect(&file).map(|_| "1")
-            }
-            "7" | "pattern" => {
-                let p = loop {
-                    let p = prompt("pattern", &cur.canonical())?;
-                    match Pattern::parse(&p) {
-                        Ok(pat) => break pat,
-                        Err(e) => eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern")),
-                    }
+                let file = match pick_file(lang, &dir_files("tronorder"), false)? {
+                    Some(p) => p,
+                    None => resolve_ext(
+                        prompt_path(lang.t("订单文件", "order file"), "order.tronorder")?,
+                        "tronorder",
+                    ),
                 };
-                cur = p;
-                eprintln!(
-                    "{}",
-                    lang.t(
-                        "  定制已更换 — 后续默认文件名跟随新 pattern",
-                        "  customization changed — default filenames follow the new pattern"
-                    )
-                );
-                Ok("1")
+                cmd_inspect(&file).map(|_| "1")
             }
             "q" | "quit" | "exit" => return Ok(true),
             _ => {
                 eprintln!(
                     "{}",
-                    lang.t("  无效选择 — 输入 1-7 或 q", "  unknown choice — 1-7 or q")
+                    lang.t("  无效选择 — 输入 1-6 或 q", "  unknown choice — 1-6 or q")
                 );
                 continue;
             }
@@ -596,11 +591,10 @@ fn cmd_order(key: &std::path::Path, pattern: &str, out: &std::path::Path) -> Res
     let pat = Pattern::parse(pattern)?;
     if pat.needs_reachability_warning() {
         eprintln!(
-            "warning: repeat:{n} is effectively undeliverable — no such addresses are \
-             known to exist for n ≥ 29 (§3.1 reachability)",
-            n = match pat {
-                Pattern::Repeat(n) => n,
-            }
+            "warning: {} is effectively undeliverable (§3.1 reachability — \
+             expected work {:.2e})",
+            pat.canonical(),
+            pat.expected_iterations()
         );
     }
     let b = scalar::read_scalar_file(key)?;

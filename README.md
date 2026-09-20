@@ -69,16 +69,23 @@ Or build from source: `cargo build --release`（stable Rust）。
 ## Quickstart / 快速上手
 
 Run `tron-tool` with no arguments for the guided interactive menu —
-启动先选语言（1=中文 / 2=English），再选定制（尾号位数）；输出文件名按定制
-自动生成（`b-repeat6.key` / `repeat6.tronorder`），完成一步自动回菜单并预选
-下一步，无需记参数：
+启动先选语言（1=English / 2=中文），再进同级菜单：new order（下单，
+仅此路径问 pattern）/ keygen（仅生成密钥）/ redeem（验收取件）。
+下单路径内文件名按定制自动生成（`b-repeat6.key` / `repeat6.tronorder`），
+完成一步自动回菜单并预选下一步，无需记参数：
 
 ```bash
-tron-tool                # 交互菜单（中/英）：keygen / order / redeem / sign / verify
+tron-tool                # 交互菜单（En/中）：new order / keygen / redeem / sign / verify
 ```
 
+Pattern 语法（§3.1）：`repeat:<n>` 尾号 n 位相同（裸数字 `8` 亦可）、
+`pair:<k>` 对子连排（`pair:2`=AABB、`pair:3`=AABBCC）、`alt:2` 间隔对
+（ABAB）、`suffix:<s>` 指定后缀字面（如 `suffix:8888`，2~8 位 base58
+字符）。命中概率即成本：`pair:2`/`alt:2` 最易（≈1/3,423），
+`suffix:8888` 最难（1/58⁴ ≈ repeat:5 的算力）。
+
 Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out；
-`-p`/`-e` 接受 `repeat:8` 或裸数字 `8`，交互模式输数字即可）：
+`-p`/`-e` 接受 §3.1 全语法或裸数字 `8`）：
 
 ```bash
 tron-tool keygen -o b.key                  # 生成买家秘密 b（0600），打印 B

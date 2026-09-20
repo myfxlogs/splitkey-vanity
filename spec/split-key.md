@@ -73,36 +73,70 @@ bias the low end). Repeat until a valid scalar is obtained.
 ### 3.1 Pattern grammar (normative)
 
 ```
-pattern := type ":" value
-type    := "repeat"            ; v1 ONLY supported type
-value   := <n>                 ; for repeat: integer
+pattern := "repeat:" <n>          ; 4 ≤ n ≤ 34
+         | "pair:"   <k>          ; k ≥ 2 (bounded by reachability rule)
+         | "alt:2"                ; fixed parameter
+         | "suffix:" <s>          ; 2 ≤ len(s) ≤ 8
+<n> <k>  := decimal integer
+<s>      := base58 alphabet chars only (no '0' 'O' 'I' 'l')
 ```
 
-- `repeat:<n>` — address ends with ≥ `n` identical base58 characters
-  (豹子号). Constraint: `4 ≤ n ≤ 34` (34-char base58check string).
-- `<n>` canonical form: decimal ASCII, no leading zeros. Emitters MUST
-  produce canonical form (`repeat:8`, not `repeat:08`). Parsers SHOULD
-  accept leading zeros but MUST compare patterns semantically as the
-  parsed `(type, n)` tuple — never by raw string equality.
-- Input shorthand (non-wire): interactive/CLI parsers SHOULD also accept
-  a bare `<n>` as shorthand for `repeat:<n>`. Wire artifacts (order
-  text, package fields) always carry the canonical `repeat:<n>` form.
-- Matching is on the full base58check string including the leading 'T'.
+Semantics — all matching runs on the **full base58check string**,
+including the leading 'T' (a trailing run of 'T's counts):
+
+- `repeat:<n>` — address ends with ≥ `n` identical characters (豹子号).
+- `pair:<k>` — the last `2k` characters form `k` adjacent identical
+  pairs (`k=2` → AABB, `k=3` → AABBCC). Adjacent groups MUST hold
+  different characters (A≠B, B≠C); non-adjacent groups MAY repeat
+  (A=C is a hit). `pair:2` on `…7777` is NOT a hit — that is `repeat:4`.
+- `alt:2` — the last 4 characters are XYXY with X≠Y (ABAB 间隔号).
+- `suffix:<s>` — the last `len(s)` characters equal `s` exactly
+  (指定后缀, e.g. `suffix:8888` hits `…8888` only).
+
+Canonicalization and shorthand:
+
+- `<n>`, `<k>` canonical form: decimal ASCII, no leading zeros.
+  Emitters MUST produce canonical form (`repeat:8`, not `repeat:08`).
+  Parsers SHOULD accept leading zeros but MUST compare patterns
+  semantically as parsed values — never by raw string equality.
+- `<s>` canonical form: verbatim characters (case-sensitive).
+- Input shorthand (non-wire): interactive/CLI parsers SHOULD also
+  accept a bare `<n>` as shorthand for `repeat:<n>`. Wire artifacts
+  (order text, package fields) always carry the canonical
+  `type:value` form.
 - `value` MUST NOT contain `'|'` — reserved delimiter of the §8 order
-  message (v1 integer values satisfy this by construction; future
-  pattern types inherit the constraint).
-- Reachability (verified): the `4 ≤ n ≤ 34` bound is syntactic only.
-  Addresses with ≥ 31 trailing identical characters provably do not
-  exist — all 58⁴ = 11,316,496 candidate strings exhaustively fail
-  base58check (the sole n = 34 candidate `T…T` has version byte 0x41
-  but fails the checksum; all 58 n = 33 candidates fail as well). For
-  n = 29/30 the expected number of existing addresses worldwide is
-  ≈ 0.06 / ≈ 10⁻³. Sellers SHOULD decline orders with n ≥ 29; buyer
-  tools SHOULD warn on n ≥ 29.
-- **Reserved (NOT implemented in v1)**: `prefix`, `suffix`, `contains`,
-  custom-word patterns. Implementations MUST reject unknown types.
-- Rationale: the seller-side matcher currently implements trailing-repeat
-  only. Spec must not promise capabilities the implementation lacks.
+  message.
+- Implementations MUST reject unknown types, out-of-range values,
+  and non-base58 `<s>` characters.
+
+Hit probability and expected work (uniform-random tail approximation):
+
+| pattern | hits per 58^(window) tails | expected work E |
+|---|---|---|
+| `repeat:4` | 58 | 58³ ≈ 1/195k |
+| `pair:2` | 58·57 | ≈ 58³/57 ≈ 1/3,423 |
+| `alt:2` | 58·57 | ≈ 1/3,423 |
+| `pair:3` | 58·57² | ≈ 1/202k |
+| `repeat:n` | 58 | 58^(n−1) |
+| `pair:k` | 58·57^(k−1) | 58^(2k)/(58·57^(k−1)) |
+| `suffix:len l` | 1 | 58^l |
+
+Reachability yardstick: let `E` = expected iterations
+(tail-space ÷ hit-count, table above).
+
+- `E ≤ 58⁶` — deliverable.
+- `58⁶ < E ≤ 58⁸` — sellers SHOULD warn and require explicit buyer
+  confirmation before accepting.
+- `E > 58⁸` — undeliverable; seller-side parsers MUST reject.
+  (Bound: `pair:8` ≈ 58⁸·1.13 is already over; `pair:9` likewise.
+  `suffix` is capped at len 8 → always ≤ 58⁸.)
+
+For `repeat` the legacy bound applies instead of the `E` scale
+(historical, verified by exhaustive base58check scan): addresses with
+≥ 31 trailing identical characters provably do not exist; for
+`n = 29/30` the expected number of existing addresses worldwide is
+≈ 0.06 / ≈ 10⁻³. Sellers SHOULD decline `repeat` orders with n ≥ 29;
+buyer tools SHOULD warn on n ≥ 29.
 
 ### 3.2 TRON address derivation (normative)
 

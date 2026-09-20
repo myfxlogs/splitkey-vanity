@@ -14,8 +14,10 @@ Windows: `certutil -hashfile tron-tool.exe SHA256` 对比 SHA256SUMS.txt。
 
 ## 1. 生成买家密钥 Generate your secret
 
-双击 `tron-tool`（无参数）进交互模式：先选语言（1=中文 / 2=English），
-再输入定制（尾号重复位数，如 `6`），然后菜单选 `1`。文件名按定制自动
+双击 `tron-tool`（无参数）进交互模式：先选语言（1=English / 2=中文），
+主菜单同级四项——`1` 新订单（仅此路径问 pattern）、`2` 仅生成密钥、
+`3` 验收取件、`6` 查看订单。只要密钥不要下单？选 `2` 即可，全程不问
+pattern。下单则选 `1`：先输入定制（见下方语法），文件名按定制自动
 生成（如 `b-repeat6.key`）。或显式命令：
 
 ```bash
@@ -25,18 +27,23 @@ tron-tool keygen -o b-repeat6.key
 - 输出 `b-*.key`（0600）+ 打印公钥 `B`。**立刻备份——丢失 = 订单全损，卖家也无法恢复。**
 - Back up the `b` file NOW: losing it forfeits the order; the seller cannot recover it.
 - 更高保障：离线机生成（`--require-offline` / interactive 里选 `y`）。
-- 交互菜单 `7` 可更换定制——更换后默认文件名自动跟随（`b-repeat4.key` 等）。
 
 ## 2. 签名订单 Sign your order
 
-交互菜单选 `2`（默认读当前定制的 `b-*.key`，输出 `repeatN.tronorder`），或：
+交互菜单选 `1` 走完整下单路径（pattern → keygen → 订单一步到底），或：
 
 ```bash
 tron-tool order -k b-repeat6.key -p 6 -o repeat6.tronorder
 ```
 
-- `-p` 尾号重复位数：`4` ~ `8`，**输数字即可**（`repeat:6` 写法同样有效）。
-  A bare digit `4`–`8` works; `repeat:<n>` is also accepted.
+- `-p` 支持 §3.1 全部语法：**`repeat:<n>`** 尾号 n 位相同（裸数字 `8`
+  亦可）、**`pair:<k>`** 对子连排（`pair:2`=AABB、`pair:3`=AABBCC）、
+  **`alt:2`** 间隔对（ABAB）、**`suffix:<s>`** 指定后缀（如
+  `suffix:8888`，2~8 位 base58 字符，无 `0 O I l`）。
+  Pattern grammar: `repeat:<n>` (bare `<n>` ok), `pair:<k>` (AABB…),
+  `alt:2` (ABAB), `suffix:<s>` (literal tail, 2–8 base58 chars).
+- 命中概率即成本：`pair:2`/`alt:2` 最易（≈1/3,423）；`suffix:8888`
+  ≈ 1/58⁴，算力开销 ≈ repeat:5。
 - 输出 `.tronorder` + 回显指纹 `H`。**保管好 .tronorder——它是取货凭证。**
   The `.tronorder` is your pickup ticket — keep it safe.
 
@@ -79,7 +86,7 @@ tron-tool redeem -p pkg.tronspk -k b.key -e 6 --export-priv priv.key -o qr.png
 | `invalid pattern "6"` | 旧版本只认 `repeat:6`——升级到 v1.0.3+ 后数字直输即可 |
 | `refusing to overwrite` | 输出文件已存在，换文件名或先移走旧文件（防误覆盖设计） |
 | 忘了下单时的要求 | `tron-tool inspect -f my.tronorder`（或菜单选 `6`）查看 pattern/H/签名；售卖页查单也会显示「你的定制」 |
-| redeem 报 pattern 不符 | `-e` 必须填你下单时的 n，不是交付包里的字段 |
+| redeem 报 pattern 不符 | `-e` 必须填你下单时的 pattern（如 `pair:2`），不是交付包里的字段 |
 | macOS 拦截未签名二进制 | `xattr -d com.apple.quarantine tron-tool` |
 | Windows SmartScreen 拦截 | 未签名新发布的正常提示：先验 SHA256（§0）→「更多信息」→「仍要运行」。SmartScreen blocks unsigned new releases: verify checksum first, then More info → Run anyway |
 
