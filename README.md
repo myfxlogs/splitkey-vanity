@@ -69,10 +69,12 @@ Or build from source: `cargo build --release`（stable Rust）。
 ## Quickstart / 快速上手
 
 Run `tron-tool` with no arguments for the guided interactive menu —
-每一步都有默认值与中文提示，完成一步自动回到菜单并预选下一步，无需记参数：
+启动先选语言（1=中文 / 2=English），再选定制（尾号位数）；输出文件名按定制
+自动生成（`b-repeat6.key` / `repeat6.tronorder`），完成一步自动回菜单并预选
+下一步，无需记参数：
 
 ```bash
-tron-tool                # 交互菜单：keygen / order / redeem / sign / verify
+tron-tool                # 交互菜单（中/英）：keygen / order / redeem / sign / verify
 ```
 
 Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out；

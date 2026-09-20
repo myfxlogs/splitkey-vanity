@@ -14,39 +14,42 @@ Windows: `certutil -hashfile tron-tool.exe SHA256` 对比 SHA256SUMS.txt。
 
 ## 1. 生成买家密钥 Generate your secret
 
-双击 `tron-tool`（无参数）进交互菜单选 `1`，或：
+双击 `tron-tool`（无参数）进交互模式：先选语言（1=中文 / 2=English），
+再输入定制（尾号重复位数，如 `6`），然后菜单选 `1`。文件名按定制自动
+生成（如 `b-repeat6.key`）。或显式命令：
 
 ```bash
-tron-tool keygen -o b.key
+tron-tool keygen -o b-repeat6.key
 ```
 
-- 输出 `b.key`（0600）+ 打印公钥 `B`。**立刻备份 b.key——丢失 = 订单全损，卖家也无法恢复。**
-- Back up `b.key` NOW: losing it forfeits the order; the seller cannot recover it.
+- 输出 `b-*.key`（0600）+ 打印公钥 `B`。**立刻备份——丢失 = 订单全损，卖家也无法恢复。**
+- Back up the `b` file NOW: losing it forfeits the order; the seller cannot recover it.
 - 更高保障：离线机生成（`--require-offline` / interactive 里选 `y`）。
+- 交互菜单 `7` 可更换定制——更换后默认文件名自动跟随（`b-repeat4.key` 等）。
 
 ## 2. 签名订单 Sign your order
 
-交互菜单选 `2`，或：
+交互菜单选 `2`（默认读当前定制的 `b-*.key`，输出 `repeatN.tronorder`），或：
 
 ```bash
-tron-tool order -k b.key -p 6 -o my.tronorder
+tron-tool order -k b-repeat6.key -p 6 -o repeat6.tronorder
 ```
 
 - `-p` 尾号重复位数：`4` ~ `8`，**输数字即可**（`repeat:6` 写法同样有效）。
   A bare digit `4`–`8` works; `repeat:<n>` is also accepted.
-- 输出 `my.tronorder` + 回显指纹 `H`。**保管好 .tronorder——它是取货凭证。**
+- 输出 `.tronorder` + 回显指纹 `H`。**保管好 .tronorder——它是取货凭证。**
   The `.tronorder` is your pickup ticket — keep it safe.
 
 ## 3. 上传 + 付款 Upload & pay
 
-在售卖页上传 `my.tronorder`，核对页面显示的 `H` == 本机回显的 `H`，
+在售卖页上传 `.tronorder`，核对页面显示的 `H` == 本机回显的 `H`，
 然后向页面给出的专属地址支付 USDT-TRC20。
 
-Upload `my.tronorder` on the vending page, check the shown `H` matches
+Upload the `.tronorder` on the vending page, check the shown `H` matches
 your local `H`, then pay the displayed USDT amount to the bound address.
 
-> ⚠ 永远不要上传 `b.key` / `priv.key` / 任何私钥文件——只上传 `.tronorder`。
-> NEVER upload `b.key` / `priv.key` / any secret file — `.tronorder` only.
+> ⚠ 永远不要上传 `b-*.key` / `priv.key` / 任何私钥文件——只上传 `.tronorder`。
+> NEVER upload `b-*.key` / `priv.key` / any secret file — `.tronorder` only.
 
 ## 4. 取货验收 Collect & redeem
 
