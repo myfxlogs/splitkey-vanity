@@ -46,6 +46,12 @@ tron-tool order -k b-repeat6.key -p 6 -o repeat6.tronorder
   ≈ 1/58⁴，算力开销 ≈ repeat:5。
 - 输出 `.tronorder` + 回显指纹 `H`。**保管好 .tronorder——它是取货凭证。**
   The `.tronorder` is your pickup ticket — keep it safe.
+- **竞拍所得 / auction win（v1.2.0+）**：卖家发 grant 凭证 `TG1.…`
+  （含 pattern+价格+单次 nonce，卖家离线密钥签名）。菜单下单首问
+  grant 码——粘贴后免输 pattern；或 `--grant "TG1.…"`：
+  Won an auction? Paste the grant code at the new-order prompt (pattern
+  auto-fills), or `tron-tool order -k b.key -p 'suffix:8888' --grant "TG1.…"`.
+  工具本地验签+比对 pattern+查有效期；v2 订单上传后方可用竞得价结算。
 
 ## 3. 上传 + 付款 Upload & pay
 

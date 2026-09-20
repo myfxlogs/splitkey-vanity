@@ -253,10 +253,16 @@ Canonical order message (UTF-8, exact bytes):
 
 ```
 order = "TRONSPK-ORDER-v1" "|" pattern "|" B_hex
+      | "TRONSPK-ORDER-v2" "|" pattern "|" B_hex "|" grant
 ```
 
 - `pattern`: canonical grammar per §3.1 (e.g. `repeat:8`).
 - `B_hex`: 66 lowercase hex characters of the compressed public key.
+- `grant` (v2 only): a seller-issued purchase credential per §8.1.
+  v2 orders carry it inline so the buyer signature binds the grant —
+  a swapped or stripped grant invalidates the order. Parsers MUST NOT
+  guess field count from `rsplit`; the version literal selects the
+  grammar (v1 = 3 fields, v2 = 4 fields).
 
 Signature:
 
@@ -301,6 +307,34 @@ escrow order signed by a foreign key) and are not distinguishable from
 each other — both resolve to a buyer refund. What is distinguishable is
 a buyer false claim: escrow order and delivered package both bound to
 the payer-proven key defeats it.
+
+### 8.1 Grant credential (normative)
+
+A grant is a seller-issued, bearer purchase credential — it carries the
+auction-negotiated (or admin-issued) pattern and price so the buyer tool
+need not re-enter them, and it is consumed exactly once.
+
+```
+grant   = "TG1" "." bs58( kid ‖ payload ) "." bs58( sig )
+kid     = u32 LE              ; signer key id from the §6 key table
+payload = pattern "|" nonce "|" expiry "|" price_minor
+sig     = ed25519_sign( "TRONVEND-GRANT-v1|" ‖ payload )
+```
+
+- `payload` fields: `pattern` canonical per §3.1; `nonce` = 16 lowercase
+  hex chars (server-assigned, single-use); `expiry` = unix seconds,
+  decimal; `price_minor` = USDT minor units (6 dp), decimal ASCII.
+- `TG1.` is a literal prefix; the two segments are bs58 (alphabet has
+  no '.', so splitting on '.' is unambiguous).
+- The signed message is the ASCII string `TRONVEND-GRANT-v1|` followed
+  by the payload text — no length prefix, no hash wrapping.
+- Verification chain: decode → parse fields → `kid` lookup in the §6
+  signer table → Ed25519 verify → check `pattern` equals the order's
+  pattern field → check nonce unused → check `expiry` not passed →
+  the order's price is `price_minor`, overriding the catalog.
+- A grant is a **bearer** credential: possession authorizes use. The
+  single-use nonce and short expiry are the theft mitigations; there is
+  no binding to a specific buyer key by design (transferable).
 
 ## Appendix A. Test vector
 

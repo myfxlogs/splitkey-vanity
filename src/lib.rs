@@ -7,6 +7,7 @@
 
 pub mod addr;
 pub mod devkey;
+pub mod grant;
 pub mod order;
 pub mod package;
 pub mod pattern;

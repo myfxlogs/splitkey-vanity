@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use tron_tool::{addr, order, package, pattern::Pattern, point, qr, redeem, scalar};
+use tron_tool::{addr, grant, order, package, pattern::Pattern, point, qr, redeem, scalar};
 
 #[derive(Parser)]
 #[command(
@@ -46,6 +46,10 @@ enum Command {
         /// Output .tronorder file.
         #[arg(short = 'o', long)]
         out: PathBuf,
+        /// Seller-issued grant credential (TG1...) — emits a v2 order; the
+        /// grant's pattern must equal --pattern.
+        #[arg(long)]
+        grant: Option<String>,
     },
     /// Redeem a signed delivery package: verify → binding → order → consistency.
     Redeem {
@@ -106,7 +110,12 @@ fn main() -> ExitCode {
             out,
             require_offline,
         }) => cmd_keygen(&out, require_offline).map(|_| true),
-        Some(Command::Order { key, pattern, out }) => cmd_order(&key, &pattern, &out).map(|_| true),
+        Some(Command::Order {
+            key,
+            pattern,
+            out,
+            grant,
+        }) => cmd_order(&key, &pattern, &out, grant.as_deref()).map(|_| true),
         Some(Command::Redeem {
             package,
             key,
@@ -316,21 +325,50 @@ fn interactive() -> Result<bool, String> {
             Err(e) => return Err(e),
         };
         let next = match choice.as_str() {
-            "1" | "new" | "order" => {
-                // New-order path: pattern determines file names — ask it
-                // first (with reachability warning), then keygen, then
-                // sign the order.
-                let pattern = loop {
-                    let p = prompt(
-                        lang.t(
-                            "定制 pattern（repeat:<n> / pair:<k> / alt:2 / suffix:<s>；尾号重复 4~8 输数字即可）",
-                            "pattern (repeat:<n> / pair:<k> / alt:2 / suffix:<s>; bare digit 4~8 = tail repeat)",
-                        ),
-                        "6",
-                    )?;
-                    match Pattern::parse(&p) {
-                        Ok(pat) => break pat,
-                        Err(e) => eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern")),
+            "1" | "new" | "order" => (|| {
+                // Grant credential first: a pasted TG1 carries its own
+                // pattern (auction wins never re-pick one). Empty = open order.
+                let grant_raw = prompt(
+                    lang.t(
+                        "grant 凭证码（竞拍所得 TG1…；没有就直接回车）",
+                        "grant code (TG1… from an auction; empty = none)",
+                    ),
+                    "",
+                )?;
+                let (pattern, grant_checked) = if grant_raw.is_empty() {
+                    let pattern = loop {
+                        let p = prompt(
+                            lang.t(
+                                "定制 pattern（repeat:<n> / pair:<k> / alt:2 / suffix:<s>；尾号重复 4~8 输数字即可）",
+                                "pattern (repeat:<n> / pair:<k> / alt:2 / suffix:<s>; bare digit 4~8 = tail repeat)",
+                            ),
+                            "6",
+                        )?;
+                        match Pattern::parse(&p) {
+                            Ok(pat) => break pat,
+                            Err(e) => {
+                                eprintln!("  {}: {e}", lang.t("无效 pattern", "invalid pattern"))
+                            }
+                        }
+                    };
+                    (pattern, None)
+                } else {
+                    match grant::Grant::parse(&grant_raw)
+                        .and_then(|g| g.verify(package::SIGNER_KEYS).map(|_| g))
+                    {
+                        Ok(g) => {
+                            eprintln!(
+                                "  grant ok — pattern {} · price {} · nonce {}",
+                                g.pattern.canonical(),
+                                g.price_minor,
+                                g.nonce_hex
+                            );
+                            (g.pattern.clone(), Some(g.raw))
+                        }
+                        Err(e) => {
+                            let _ = e;
+                            return Err(e);
+                        }
                     }
                 };
                 if pattern.needs_reachability_warning() {
@@ -367,9 +405,10 @@ fn interactive() -> Result<bool, String> {
                         lang.t("订单输出文件", "order output file"),
                         &format!("{slug}.tronorder"),
                     )?;
-                    cmd_order(&key, &pattern.canonical(), &out).map(|_| "3")
+                    cmd_order(&key, &pattern.canonical(), &out, grant_checked.as_deref())
+                        .map(|_| "3")
                 })()
-            }
+            })(),
             "2" | "keygen" => {
                 let out = prompt_path(lang.t("b 密钥输出文件", "b output file"), "b.key")?;
                 let ro = matches!(
@@ -588,7 +627,12 @@ fn cmd_keygen(out: &std::path::Path, require_offline: bool) -> Result<(), String
     Ok(())
 }
 
-fn cmd_order(key: &std::path::Path, pattern: &str, out: &std::path::Path) -> Result<(), String> {
+fn cmd_order(
+    key: &std::path::Path,
+    pattern: &str,
+    out: &std::path::Path,
+    grant: Option<&str>,
+) -> Result<(), String> {
     if out.exists() {
         // The .tronorder record is the local source of --expect-pattern and H.
         return Err(format!("{} exists — refusing to overwrite", out.display()));
@@ -602,10 +646,38 @@ fn cmd_order(key: &std::path::Path, pattern: &str, out: &std::path::Path) -> Res
             pat.expected_iterations()
         );
     }
+    // v2 path: the grant is verified LOCALLY against the signer table —
+    // the same trust chain as package signatures (design-v1.1 §3).
+    let grant_checked = match grant {
+        Some(raw) => {
+            let g = grant::Grant::parse(raw)?;
+            g.verify(package::SIGNER_KEYS)?;
+            if g.pattern != pat {
+                return Err(format!(
+                    "grant pattern {} does not match order pattern {}",
+                    g.pattern.canonical(),
+                    pat.canonical()
+                ));
+            }
+            if g.expiry_unix
+                <= std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            {
+                return Err("grant is expired".into());
+            }
+            Some(g.raw)
+        }
+        None => None,
+    };
     let b = scalar::read_scalar_file(key)?;
     let b_point = point::pubkey_from_secret(&b)?;
-    let order_text =
-        order::build_order_text(&pat.canonical(), &point::pubkey_compressed_hex(&b_point));
+    let b_hex = point::pubkey_compressed_hex(&b_point);
+    let order_text = match &grant_checked {
+        Some(g) => order::build_order_text_v2(&pat.canonical(), &b_hex, g),
+        None => order::build_order_text(&pat.canonical(), &b_hex),
+    };
 
     let digest = order::order_digest(&order_text);
     let sig = order::sign_digest(&digest, &b)?;
@@ -699,6 +771,9 @@ fn cmd_inspect(path: &std::path::Path) -> Result<bool, String> {
     let of = order::parse_order_file(&data)?;
     println!("pattern   : {}", of.pattern.canonical());
     println!("B         : {}", of.b_hex);
+    if let Some(g) = &of.grant {
+        println!("grant     : {g}");
+    }
     println!(
         "H         : {}",
         tron_tool::hex_encode(&order::order_fingerprint(&of.order_text))

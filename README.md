@@ -84,6 +84,12 @@ Pattern 语法（§3.1）：`repeat:<n>` 尾号 n 位相同（裸数字 `8` 亦�
 字符）。命中概率即成本：`pair:2`/`alt:2` 最易（≈1/3,423），
 `suffix:8888` 最难（1/58⁴ ≈ repeat:5 的算力）。
 
+**竞拍单 / auction wins（v1.2.0+）**：拍到靓号后卖家发 grant 凭证
+（`TG1.…`，含 pattern+价格+单次 nonce，由卖家离线密钥签名）。下单时
+粘贴——new order 菜单首问 grant 码，验签后免输 pattern；或
+`tron-tool order -k b.key -p 'suffix:8888' --grant "TG1.…"` 生成 v2 订单。
+工具本地验签+比对 pattern+查有效期，三项不符拒单。
+
 Or scripted use — 脚本用法（`-k` key、`-p` pattern/package、`-o` out；
 `-p`/`-e` 接受 §3.1 全语法或裸数字 `8`）：
 
@@ -128,7 +134,7 @@ The binary is `tron-tool`. Bare invocation opens the interactive menu
 |---|---|---|
 | *(no args)* | ✅ | 交互菜单 guided menu |
 | `keygen -o <f> [--require-offline]` | ✅ | 生成 (b, B)：b 落 0600 文件，B 打印供订单使用 |
-| `order -k <f> -p 'repeat:<n>' -o <f>` | ✅ | 用 b 签订单承诺 → `.tronorder` + 回显 H（付款绑定引用） |
+| `order -k <f> -p 'repeat:<n>' -o <f> [--grant TG1.…]` | ✅ | 用 b 签订单承诺 → `.tronorder` + 回显 H（付款绑定引用）；`--grant` 出 v2 竞罚单 |
 | `redeem -p <f> -k <f> -e 'repeat:<n>'` | ✅ | 收货：验签 → 绑定/订单/自洽三检 → 导出私钥 + QR |
 | `sign -k <f> -m <m>` | ✅ | 商户：TIP-191 签名收款地址声明 |
 | `verify -a <a> -m <m> -s <s>` | ✅ | 验证签名（恢复地址比对） |

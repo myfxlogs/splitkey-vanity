@@ -12,11 +12,20 @@ use sha3::{Digest, Keccak256};
 pub const ORDER_DOMAIN: &str = "\x19TRON Vanity Order:\n";
 pub const TIP191_DOMAIN: &str = "\x19TRON Signed Message:\n";
 pub const ORDER_VERSION: &str = "TRONSPK-ORDER-v1";
+pub const ORDER_VERSION_V2: &str = "TRONSPK-ORDER-v2";
 
 /// Canonical order message (§8, exact bytes):
 /// `TRONSPK-ORDER-v1|<pattern-canonical>|<B-hex-66-lowercase>`
 pub fn build_order_text(pattern_canonical: &str, b_hex: &str) -> String {
     format!("{ORDER_VERSION}|{pattern_canonical}|{b_hex}")
+}
+
+/// §8 v2 order — adds the grant credential as a fourth field. The buyer
+/// signature covers the full text including the grant, so a swapped or
+/// stripped grant invalidates the order.
+/// `TRONSPK-ORDER-v2|<pattern-canonical>|<B-hex>|<TG1.…​.…>`
+pub fn build_order_text_v2(pattern_canonical: &str, b_hex: &str, grant: &str) -> String {
+    format!("{ORDER_VERSION_V2}|{pattern_canonical}|{b_hex}|{grant}")
 }
 
 /// keccak256( domain ‖ decimal(len_bytes(payload)) ‖ payload )
@@ -71,16 +80,21 @@ pub fn sign_digest(
 }
 
 /// Parsed `.tronorder` file (§8): order text + buyer signature.
+/// `grant` is Some for v2 orders (raw `TG1.…​.…` string), None for v1.
 pub struct OrderFile {
     pub order_text: String,
     pub pattern: crate::pattern::Pattern,
     /// Compressed-pubkey B as written in the order text (lowercase hex).
     pub b_hex: String,
+    /// v2 grant credential as embedded in the order text.
+    pub grant: Option<String>,
     pub signature: [u8; 65],
 }
 
 /// Parse a `.tronorder` file: `<order_text>\n0x<130-hex sig>\n` — exactly
-/// two lines. Structural parse only; call [`order_signature_ok`] for the
+/// two lines. v1 = 3 fields, v2 = 4 fields (grant). For v2 the embedded
+/// grant must parse AND its payload pattern must equal the order pattern.
+/// Structural parse only; call [`order_signature_ok`] for the
 /// cryptographic check.
 pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
     let text = std::str::from_utf8(data).map_err(|_| "order file is not UTF-8".to_string())?;
@@ -94,12 +108,30 @@ pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
         return Err("order file has extra lines".into());
     }
     let mut fields = order_text.split('|');
-    if fields.next() != Some(ORDER_VERSION) {
-        return Err(format!("not a {ORDER_VERSION} order"));
-    }
+    let version = fields.next().unwrap_or("");
+    let is_v2 = match version {
+        v if v == ORDER_VERSION => false,
+        v if v == ORDER_VERSION_V2 => true,
+        _ => return Err(format!("not a {ORDER_VERSION} order")),
+    };
     let pattern =
         crate::pattern::Pattern::parse(fields.next().ok_or("order missing pattern field")?)?;
     let b_hex = fields.next().ok_or("order missing B field")?.to_string();
+    let grant = if is_v2 {
+        let g = fields.next().ok_or("v2 order missing grant field")?;
+        let parsed = crate::grant::Grant::parse(g)
+            .map_err(|e| format!("v2 order grant field: {e}"))?;
+        if parsed.pattern != pattern {
+            return Err(format!(
+                "v2 order pattern {} != grant pattern {}",
+                pattern.canonical(),
+                parsed.pattern.canonical()
+            ));
+        }
+        Some(g.to_string())
+    } else {
+        None
+    };
     if fields.next().is_some() {
         return Err("order text has extra fields".into());
     }
@@ -112,6 +144,7 @@ pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
         order_text,
         pattern,
         b_hex,
+        grant,
         signature,
     })
 }
