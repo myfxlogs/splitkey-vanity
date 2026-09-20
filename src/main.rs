@@ -114,7 +114,16 @@ fn main() -> ExitCode {
             export_priv,
             timeout,
             out,
-        }) => cmd_redeem(&package, &key, &expect_pattern, export_priv, timeout, out).map(|_| true),
+        }) => cmd_redeem(
+            &package,
+            &key,
+            &expect_pattern,
+            export_priv,
+            timeout,
+            out,
+            true,
+        )
+        .map(|_| true),
         Some(Command::Sign { key, message }) => cmd_sign(&key, &message).map(|_| true),
         Some(Command::Verify {
             address,
@@ -173,13 +182,62 @@ fn prompt_path(label: &str, default: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(prompt(label, default)?))
 }
 
-fn prompt_opt(label: &str) -> Result<Option<PathBuf>, String> {
-    let s = prompt(label, "")?;
-    Ok(if s.is_empty() {
-        None
+/// Sorted files in the current directory with the given extension.
+fn dir_files(ext: &str) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(".")
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == ext))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// Typed filename without extension → try `<name>.<ext>` if the bare name
+/// doesn't exist as a file.
+fn resolve_ext(p: PathBuf, ext: &str) -> PathBuf {
+    if p.exists() || p.extension().is_some() {
+        p
     } else {
-        Some(PathBuf::from(s))
-    })
+        p.with_extension(ext)
+    }
+}
+
+/// Pick one file from a discovered list: 1 entry → auto-selected (announced);
+/// several → numbered menu. `allow_empty` lets a blank answer skip (→ None).
+fn pick_file(lang: Lang, files: &[PathBuf], allow_empty: bool) -> Result<Option<PathBuf>, String> {
+    match files.len() {
+        0 => Ok(None),
+        1 => {
+            eprintln!("  → {}", files[0].display());
+            Ok(Some(files[0].clone()))
+        }
+        _ => loop {
+            for (i, f) in files.iter().enumerate() {
+                eprintln!("  {}) {}", i + 1, f.display());
+            }
+            let label = if allow_empty {
+                lang.t("选择序号 (空=跳过)", "pick # (empty=skip)")
+            } else {
+                lang.t("选择序号", "pick #")
+            };
+            let s = prompt(label, if allow_empty { "" } else { "1" })?;
+            if s.is_empty() && allow_empty {
+                return Ok(None);
+            }
+            match s
+                .parse::<usize>()
+                .ok()
+                .filter(|&n| (1..=files.len()).contains(&n))
+            {
+                Some(n) => return Ok(Some(files[n - 1].clone())),
+                None => eprintln!("{}", lang.t("  无效序号", "  invalid number")),
+            }
+        },
+    }
 }
 
 /// Session language for the interactive menu — chosen once at launch.
@@ -251,8 +309,8 @@ fn interactive() -> Result<bool, String> {
                 "  2) order   sign order → .tronorder + fingerprint H",
             ),
             lang.t(
-                "  3) redeem  验收交付包 → 导出私钥 + 收款 QR",
-                "  3) redeem  accept delivery package → export priv + QR",
+                "  3) redeem  验收交付包 → 导出私钥 + 私钥二维码",
+                "  3) redeem  accept delivery package → export priv + priv QR",
             ),
             lang.t(
                 "  4) sign    TIP-191 签名声明",
@@ -313,48 +371,132 @@ fn interactive() -> Result<bool, String> {
                 cmd_order(&key, &cur.canonical(), &out).map(|_| "3")
             }
             "3" | "redeem" => {
-                let package = prompt_path(lang.t("交付包文件", "package file"), "pkg.tronspk")?;
-                let def_key = format!("b-{slug}.key");
-                let key = prompt_path(lang.t("密钥文件 (b)", "key file (b)"), &def_key)?;
+                // Auto-discover: scan cwd for .tronspk → parse → its (pattern, B)
+                // identify the matching b-*.key (pubkey == pkg.b) and
+                // *.tronorder (pattern + B both match) — user just confirms.
+                let package = match pick_file(lang, &dir_files("tronspk"), false)? {
+                    Some(p) => p,
+                    None => resolve_ext(
+                        prompt_path(lang.t("交付包文件", "package file"), "pkg.tronspk")?,
+                        "tronspk",
+                    ),
+                };
+                let data = std::fs::read(&package)
+                    .map_err(|e| format!("cannot read {}: {e}", package.display()))?;
+                let pkg = package::parse(&data)?;
+                let bhex = tron_tool::hex_encode(&pkg.b);
+                let slug = pattern_slug(&Pattern::parse(&pkg.pattern)?);
+                eprintln!(
+                    "  {}: {} / B={}…",
+                    lang.t("交付包", "package"),
+                    pkg.pattern,
+                    &bhex[..16]
+                );
+
+                let keys: Vec<PathBuf> = dir_files("key")
+                    .into_iter()
+                    .filter(|f| {
+                        scalar::read_scalar_file(f)
+                            .ok()
+                            .and_then(|s| point::pubkey_from_secret(&s).ok())
+                            .map(|p| point::pubkey_compressed_hex(&p) == bhex)
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                eprintln!(
+                    "{}",
+                    lang.t("  b 密钥（自动匹配 B）", "  b key (auto-matched to B)")
+                );
+                let key = match pick_file(lang, &keys, false)? {
+                    Some(p) => p,
+                    None => {
+                        eprintln!(
+                            "{}",
+                            lang.t(
+                                "  目录下没有匹配该交付包的 b 文件 — 请手动指定",
+                                "  no b file in cwd matches this package — enter manually"
+                            )
+                        );
+                        resolve_ext(
+                            prompt_path(
+                                lang.t("密钥文件 (b)", "key file (b)"),
+                                &format!("b-{slug}.key"),
+                            )?,
+                            "key",
+                        )
+                    }
+                };
+
+                let orders: Vec<PathBuf> = dir_files("tronorder")
+                    .into_iter()
+                    .filter(|f| {
+                        std::fs::read(f)
+                            .ok()
+                            .and_then(|d| order::parse_order_file(&d).ok())
+                            .map(|of| of.b_hex == bhex && of.pattern.canonical() == pkg.pattern)
+                            .unwrap_or(false)
+                    })
+                    .collect();
                 eprintln!(
                     "{}",
                     lang.t(
-                        "  expect-pattern 必须与你本地订单记录一致",
-                        "  expect-pattern must match YOUR order record"
+                        "  订单文件（自动匹配 pattern+B，空=手动输 expect-pattern）",
+                        "  order file (auto-matched on pattern+B, empty=manual)"
                     )
                 );
-                let order_path = prompt(
-                    lang.t(
-                        "订单文件（自动带出 pattern，空=手动输入）",
-                        "order file (fills pattern, empty=manual)",
-                    ),
-                    &format!("{slug}.tronorder"),
-                )?;
-                let mut expect_default = String::from("repeat:6");
-                if !order_path.is_empty() {
-                    match std::fs::read(&order_path)
-                        .map_err(|e| e.to_string())
-                        .and_then(|d| order::parse_order_file(&d))
-                    {
-                        Ok(of) => expect_default = of.pattern.canonical(),
-                        Err(e) => eprintln!(
-                            "  {} {e}",
-                            lang.t(
-                                "订单文件读取失败 — 请手动输入",
-                                "order file unreadable — enter manually"
-                            )
-                        ),
+                let order_path = pick_file(lang, &orders, true)?;
+                let expect = match order_path {
+                    Some(p) => {
+                        let of = order::parse_order_file(
+                            &std::fs::read(&p)
+                                .map_err(|e| format!("cannot read {}: {e}", p.display()))?,
+                        )?;
+                        of.pattern.canonical()
                     }
-                }
-                let expect = prompt("expect-pattern", &expect_default)?;
-                let export = prompt_opt(lang.t(
-                    "导出私钥文件 (空=不导出)",
-                    "export priv to file (empty=skip)",
-                ))?;
-                let out = prompt_opt(
-                    lang.t("收款QR图片 (空=终端显示)", "QR image out (empty=terminal)"),
-                )?;
-                cmd_redeem(&package, &key, &expect, export, 60, out).map(|_| "q")
+                    None => prompt("expect-pattern", &pkg.pattern)?,
+                };
+
+                let export = if matches!(
+                    prompt(
+                        lang.t("导出私钥到文件？(y/N)", "export private key to file? (y/N)"),
+                        "N",
+                    )?
+                    .as_str(),
+                    "y" | "Y" | "yes"
+                ) {
+                    Some(resolve_ext(
+                        prompt_path(
+                            lang.t("私钥文件名", "priv file name"),
+                            &format!("priv-{slug}.key"),
+                        )?,
+                        "key",
+                    ))
+                } else {
+                    None
+                };
+                let (show_qr, out) = match prompt(
+                    lang.t(
+                        "私钥二维码（扫码导入钱包）：1=终端显示 2=存 PNG 0=跳过",
+                        "private-key QR (scan to import): 1=terminal 2=save PNG 0=skip",
+                    ),
+                    "1",
+                )?
+                .as_str()
+                {
+                    "0" | "n" | "N" | "no" => (false, None),
+                    "2" => (
+                        true,
+                        Some(resolve_ext(
+                            prompt_path(
+                                lang.t("QR 图片文件", "QR image file"),
+                                &format!("priv-{slug}.png"),
+                            )?,
+                            "png",
+                        )),
+                    ),
+                    _ => (true, None),
+                };
+                cmd_redeem(&package, &key, &expect, export, 60, out, show_qr).map(|_| "q")
             }
             "4" | "sign" => {
                 let key = prompt_path(
@@ -489,6 +631,7 @@ fn cmd_redeem(
     export_priv: Option<PathBuf>,
     timeout: u64,
     out: Option<PathBuf>,
+    show_qr: bool,
 ) -> Result<(), String> {
     let expect = Pattern::parse(expect_pattern)?;
     if expect.needs_reachability_warning() {
@@ -522,7 +665,11 @@ fn cmd_redeem(
     }
 
     let priv_hex = zeroize::Zeroizing::new(tron_tool::hex_encode(&*result.priv_key));
-    qr::render(&priv_hex, out.as_deref(), timeout)
+    if show_qr {
+        qr::render(&priv_hex, out.as_deref(), timeout)
+    } else {
+        Ok(())
+    }
 }
 
 fn cmd_sign(key: &std::path::Path, message: &str) -> Result<(), String> {

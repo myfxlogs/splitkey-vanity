@@ -53,8 +53,15 @@ your local `H`, then pay the displayed USDT amount to the bound address.
 
 ## 4. 取货验收 Collect & redeem
 
-付款后 GPU 开工；在售卖页用 `H` 查询状态，交付后下载 `.tronspk` 包，
-本机验收（交互菜单选 `3`），或：
+付款后 GPU 开工；在售卖页用 `H` 查询状态，交付后下载 `.tronspk` 包。
+把 `.tronspk` 放进与 `b-*.key`、`.tronorder` 同一目录，交互菜单选 `3`——
+工具自动扫描并配对（按交付包里的 B+pattern 匹配密钥与订单文件），
+只需确认导出选项：
+
+- `导出私钥到文件？` y → 写 `priv-<pattern>.key`（0600）；N → 不落盘
+- `私钥二维码` 1=终端显示（扫码导入钱包）2=存 PNG 0=跳过
+
+或显式命令：
 
 ```bash
 tron-tool redeem -p pkg.tronspk -k b.key -e 6 --export-priv priv.key -o qr.png
@@ -63,7 +70,7 @@ tron-tool redeem -p pkg.tronspk -k b.key -e 6 --export-priv priv.key -o qr.png
 - `-e` 必须与你订单里的 pattern 一致（同样是输数字即可）。
 - 三段验收自动执行：卖家签名 → 交付地址确含 `b` 绑定 → 地址满足 pattern。
   全部通过才打印靓号地址并导出 `priv.key`（真正私钥 = b + d）。
-- `priv.key` 可导入任意 TRON 钱包；`-o qr.png` 生成收款二维码。
+- `priv.key` 可导入任意 TRON 钱包；二维码内容为**私钥**，用于扫码导入钱包。
 
 ## 常见问题 Troubleshooting
 
