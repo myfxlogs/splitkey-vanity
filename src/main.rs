@@ -82,6 +82,19 @@ enum Command {
         #[arg(short = 'm', long)]
         message: String,
     },
+    /// Build an auction bid credential: signs TRONVEND-BID-v1|<auction>|<amount>|<B>
+    /// with b and prints a single `tronbid1:…` blob to paste into the bid form.
+    Bid {
+        /// Secret scalar file (§7.1 format).
+        #[arg(short = 'k', long)]
+        key: PathBuf,
+        /// Auction id as shown on the auction page.
+        #[arg(short = 'a', long)]
+        auction: String,
+        /// Bid amount in USDT, e.g. '500' or '499.99'.
+        #[arg(short = 'm', long)]
+        amount: String,
+    },
     /// Verify a TIP-191 signature against a claimed address.
     Verify {
         /// Claimed TRON address (T...).
@@ -135,6 +148,11 @@ fn main() -> ExitCode {
         )
         .map(|_| true),
         Some(Command::Sign { key, message }) => cmd_sign(&key, &message).map(|_| true),
+        Some(Command::Bid {
+            key,
+            auction,
+            amount,
+        }) => cmd_bid(&key, &auction, &amount).map(|_| true),
         Some(Command::Verify {
             address,
             message,
@@ -823,6 +841,28 @@ fn cmd_sign(key: &std::path::Path, message: &str) -> Result<(), String> {
     let digest = order::tip191_digest(message);
     let sig = order::sign_digest(&digest, &priv_key)?;
     println!("0x{}", tron_tool::hex_encode(&*sig));
+    Ok(())
+}
+
+/// `tronbid1:<auction_id>:<amount>:<B>:<sig>` — the whole bid credential in
+/// one paste-able line. The vend side re-derives the signed statement from
+/// these fields and cross-checks the auction id against the URL path.
+fn cmd_bid(key: &std::path::Path, auction: &str, amount: &str) -> Result<(), String> {
+    if auction.is_empty() || auction.contains(':') || auction.contains('|') {
+        return Err("auction id must be non-empty and contain no ':' or '|'".into());
+    }
+    if amount.is_empty() || amount.contains(':') || amount.contains('|') {
+        return Err("amount must be a decimal USDT amount (no ':' or '|')".into());
+    }
+    let b = scalar::read_scalar_file(key)?;
+    let b_hex = point::pubkey_compressed_hex(&point::pubkey_from_secret(&b)?);
+    eprintln!("bidding as {}", addr::privkey_to_address(&b)?);
+    let stmt = format!("TRONVEND-BID-v1|{auction}|{amount}|{b_hex}");
+    let sig = order::sign_digest(&order::tip191_digest(&stmt), &b)?;
+    println!(
+        "tronbid1:{auction}:{amount}:{b_hex}:0x{}",
+        tron_tool::hex_encode(&*sig)
+    );
     Ok(())
 }
 
