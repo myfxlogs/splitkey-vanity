@@ -335,7 +335,7 @@ need not re-enter them, and it is consumed exactly once.
 
 ```
 grant   = "TG1" "." bs58( kid ‖ payload ) "." bs58( sig )
-kid     = u32 LE              ; signer key id from the §6 key table
+kid     = u32 LE              ; signer key id — table in package-format.md §3
 payload = pattern "|" nonce "|" expiry "|" price_minor
 sig     = ed25519_sign( "TRONVEND-GRANT-v1|" ‖ payload )
 ```
@@ -347,8 +347,8 @@ sig     = ed25519_sign( "TRONVEND-GRANT-v1|" ‖ payload )
   no '.', so splitting on '.' is unambiguous).
 - The signed message is the ASCII string `TRONVEND-GRANT-v1|` followed
   by the payload text — no length prefix, no hash wrapping.
-- Verification chain: decode → parse fields → `kid` lookup in the §6
-  signer table → Ed25519 verify → check `pattern` equals the order's
+- Verification chain: decode → parse fields → `kid` lookup in the
+  `package-format.md` §3 signer table → Ed25519 verify → check `pattern` equals the order's
   pattern field → check nonce unused → check `expiry` not passed →
   the order's price is `price_minor`, overriding the catalog.
 - A grant is a **bearer** credential: possession authorizes use. The

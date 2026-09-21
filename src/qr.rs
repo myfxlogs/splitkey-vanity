@@ -45,7 +45,11 @@ pub fn render(payload: &str, out: Option<&Path>, timeout: u64) -> Result<(), Str
         Some(path) => {
             write_image(&code, path).map_err(|e| format!("write {}: {e}", path.display()))?;
             if timeout > 0 {
-                eprintln!("written {} (mode 0600)", path.display());
+                eprintln!(
+                    "written {} (mode 0600) — self-destructs in {timeout}s; \
+                     import it now or re-run with --timeout 0 to keep",
+                    path.display()
+                );
                 countdown(timeout, &path.display().to_string());
                 destroy_file(path).map_err(|e| format!("destroy {}: {e}", path.display()))?;
                 eprintln!("expired — {} destroyed", path.display());

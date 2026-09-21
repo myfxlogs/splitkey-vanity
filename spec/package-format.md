@@ -24,8 +24,9 @@ Total size: `153 + pattern_len` bytes.
 
 ### 1.1 Field semantics
 
-- `pattern`: the order-agreed match pattern. v1 supports `repeat:<n>`
-  only (see `split-key.md` §3.1); unknown types MUST be rejected.
+- `pattern`: the order-agreed match pattern, canonical grammar per
+  `split-key.md` §3.1 (`repeat`/`pair`/`alt`/`suffix`); unknown types
+  MUST be rejected.
 - `timestamp`: **informational issue time only**. It is NOT used in
   signature semantics, replay protection, or buyer-side verification;
   it exists for order correlation and dispute evidence.
@@ -77,8 +78,13 @@ parse → check magic + version → lookup pubkey by signer_key_id
 
 ## 5. Seller key management (normative for issuer)
 
-- The Ed25519 signing private key is kept OFFLINE and never committed to
-  any repository.
+- Seller signing keys are tiered. The root/production signer key is kept
+  OFFLINE and never committed to any repository; an automated
+  fulfillment signer key (its own `key_id`) MAY live on the issuing
+  machine — per §2 the signature is an origin proof only, so a hot-key
+  compromise is bounded by `key_id` revocation (below) plus the
+  buyer-side acceptance chain in `split-key.md` §4, which a forged
+  package cannot pass without actually satisfying the order.
 - **Issuer self-check**: before signing, the issuer MUST verify that
   `1 ≤ d < n` and that `addr(B + d·G)` satisfies the order's `pattern`
   — a signed package MUST be valid on its own terms.
