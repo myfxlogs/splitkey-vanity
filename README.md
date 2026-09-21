@@ -3,7 +3,7 @@
 Buyer-side tool for split-key vanity addresses — sell compute, not keys.
 靓号 split-key 买家工具——卖家只卖算力，私钥不出你本机。
 
-**Status**: v1.0.0 released. / 已发布 v1.0.0。
+**Status**: v1.2.1 released. / 已发布 v1.2.1。
 
 **Chains**: TRON first; the split-key protocol is pure secp256k1 and
 extends to any chain (ETH, BTC) with a thin address-derivation adapter.
@@ -127,8 +127,8 @@ but it leaks your order).
 ## Commands / 命令
 
 The binary is `tron-tool`. Bare invocation opens the interactive menu
-(v1.0.2+); all five commands also take arguments for scripted use：
-裸跑进交互菜单；五命令均可参数化：
+(v1.0.2+); every command also takes arguments for scripted use：
+裸跑进交互菜单；各命令均可参数化：
 
 | Command | Status | Purpose |
 |---|---|---|
