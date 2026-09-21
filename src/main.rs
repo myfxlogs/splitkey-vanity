@@ -701,6 +701,15 @@ fn cmd_order(
     let b = scalar::read_scalar_file(key)?;
     let b_point = point::pubkey_from_secret(&b)?;
     let b_hex = point::pubkey_compressed_hex(&b_point);
+    // §3.3: a buyer key is single-use — if the same B fronts two delivered
+    // orders, priv₂ − priv₁ = d₂ − d₁ over public offsets links the keys.
+    if let Some(prior) = find_order_with_b(out, &b_hex)? {
+        return Err(format!(
+            "buyer key already used in {} — generate a fresh key (`tron-tool keygen`); \
+             reusing it links the resulting private keys by a public offset (§3.3)",
+            prior.display()
+        ));
+    }
     let order_text = match &grant_checked {
         Some(g) => order::build_order_text_v2(&pat.canonical(), &b_hex, g),
         None => order::build_order_text(&pat.canonical(), &b_hex),
@@ -720,6 +729,30 @@ fn cmd_order(
     );
     eprintln!("wrote {}", out.display());
     Ok(())
+}
+
+/// §3.3 single-use check: scan sibling `.tronorder` files for one already
+/// carrying this `B`. Order files kept elsewhere aren't visible — the
+/// seller-side rejection is the authoritative guard; this catches the
+/// common local-reuse footgun before an order is ever posted.
+fn find_order_with_b(
+    out: &std::path::Path,
+    b_hex: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let dir = out.parent().unwrap_or(std::path::Path::new("."));
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("scan {}: {e}", dir.display()))? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path == *out || path.extension().and_then(|e| e.to_str()) != Some("tronorder") {
+            continue;
+        }
+        let data = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        if let Ok(of) = order::parse_order_file(&data) {
+            if of.b_hex == b_hex {
+                return Ok(Some(path));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn cmd_redeem(

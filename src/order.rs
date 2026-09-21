@@ -84,7 +84,8 @@ pub fn sign_digest(
 pub struct OrderFile {
     pub order_text: String,
     pub pattern: crate::pattern::Pattern,
-    /// Compressed-pubkey B as written in the order text (lowercase hex).
+    /// Compressed-pubkey B from the order text, normalized to canonical
+    /// lowercase hex (§3 hex rules) regardless of the input case.
     pub b_hex: String,
     /// v2 grant credential as embedded in the order text.
     pub grant: Option<String>,
@@ -116,7 +117,9 @@ pub fn parse_order_file(data: &[u8]) -> Result<OrderFile, String> {
     };
     let pattern =
         crate::pattern::Pattern::parse(fields.next().ok_or("order missing pattern field")?)?;
-    let b_hex = fields.next().ok_or("order missing B field")?.to_string();
+    // §3: parsers normalize hex to lowercase before validation — the stored
+    // field is canonical even if the order text used upper/mixed case.
+    let b_hex = fields.next().ok_or("order missing B field")?.to_lowercase();
     let grant = if is_v2 {
         let g = fields.next().ok_or("v2 order missing grant field")?;
         let parsed =

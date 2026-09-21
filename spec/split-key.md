@@ -144,6 +144,25 @@ buyer tools SHOULD warn on n ≥ 29.
 addr = base58check( 0x41 ‖ keccak256(x ‖ y)[12..32] )
 ```
 
+### 3.3 Buyer key uniqueness (normative)
+
+A buyer key pair `(b, B)` is **single-use**: `B` MUST NOT appear in more
+than one order. If the same `B` fronts two orders that both reach
+delivery, the resulting private keys are related by a public delta:
+
+```
+priv₂ − priv₁ = d₂ − d₁   (mod n)
+```
+
+Anyone who learns both offsets — delivered packages, logs, arbitration
+exhibits — can then derive every key in the set from any single one of
+them: compromising one address compromises all of them.
+
+Sellers MUST reject an order whose `B` already appears in a prior order
+(reposting the identical order file is idempotent, not reuse). Buyer
+tools SHOULD refuse to create a second order file with a previously
+used key.
+
 - `x`, `y`: the two 32-byte big-endian coordinates of the **uncompressed**
   secp256k1 point — exactly 32 bytes each, zero-padded; the `0x04`
   uncompressed-point prefix byte is NOT included (`x‖y` is 64 bytes).
