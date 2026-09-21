@@ -144,6 +144,20 @@ buyer tools SHOULD warn on n ≥ 29.
 addr = base58check( 0x41 ‖ keccak256(x ‖ y)[12..32] )
 ```
 
+- `x`, `y`: the two 32-byte big-endian coordinates of the **uncompressed**
+  secp256k1 point — exactly 32 bytes each, zero-padded; the `0x04`
+  uncompressed-point prefix byte is NOT included (`x‖y` is 64 bytes).
+- `keccak256`: original Keccak-256, not NIST SHA3-256.
+- `base58check(payload)`: Bitcoin base58 alphabet
+  `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`;
+  checksum = first 4 bytes of `SHA256(SHA256(payload))`, appended before
+  base58 encoding.
+- The payload `0x41 ‖ 20 bytes` plus 4-byte checksum is 25 bytes; the
+  encoded result is always 34 characters and its first character is
+  always `'T'` (the version byte's value range maps to index 26). The
+  `'T'` is an emergent property of the encoding — implementations MUST
+  NOT prepend `'T'` manually.
+
 ### 3.3 Buyer key uniqueness (normative)
 
 A buyer key pair `(b, B)` is **single-use**: `B` MUST NOT appear in more
@@ -162,20 +176,6 @@ Sellers MUST reject an order whose `B` already appears in a prior order
 (reposting the identical order file is idempotent, not reuse). Buyer
 tools SHOULD refuse to create a second order file with a previously
 used key.
-
-- `x`, `y`: the two 32-byte big-endian coordinates of the **uncompressed**
-  secp256k1 point — exactly 32 bytes each, zero-padded; the `0x04`
-  uncompressed-point prefix byte is NOT included (`x‖y` is 64 bytes).
-- `keccak256`: original Keccak-256, not NIST SHA3-256.
-- `base58check(payload)`: Bitcoin base58 alphabet
-  `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`;
-  checksum = first 4 bytes of `SHA256(SHA256(payload))`, appended before
-  base58 encoding.
-- The payload `0x41 ‖ 20 bytes` plus 4-byte checksum is 25 bytes; the
-  encoded result is always 34 characters and its first character is
-  always `'T'` (the version byte's value range maps to index 26). The
-  `'T'` is an emergent property of the encoding — implementations MUST
-  NOT prepend `'T'` manually.
 
 ## 4. Key combination (buyer side)
 

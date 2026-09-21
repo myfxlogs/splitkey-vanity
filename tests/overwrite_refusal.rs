@@ -59,7 +59,7 @@ fn qr_image_output_refuses_existing() {
     let dir = tmpdir("qr");
     let p = preexisting(&dir, "qr.png");
     let payload = "ab".repeat(32);
-    let err = tron_tool::qr::render(&payload, Some(&p), 0).unwrap_err();
+    let err = tron_tool::qr::render(&payload, Some(&p), 0, true).unwrap_err();
     assert!(err.contains("refusing to overwrite"), "got: {err}");
     assert_untouched(&p);
     std::fs::remove_dir_all(&dir).ok();

@@ -131,6 +131,7 @@ fn main() -> ExitCode {
             timeout,
             out,
             true,
+            true,
         )
         .map(|_| true),
         Some(Command::Sign { key, message }) => cmd_sign(&key, &message).map(|_| true),
@@ -577,7 +578,7 @@ fn interactive() -> Result<bool, String> {
                     ),
                     _ => (true, None),
                 };
-                cmd_redeem(&package, &key, &expect, export, 60, out, show_qr).map(|_| "q")
+                cmd_redeem(&package, &key, &expect, export, 60, out, show_qr, false).map(|_| "q")
             }
             "4" | "sign" => {
                 let key = prompt_path(
@@ -745,7 +746,16 @@ fn find_order_with_b(
         if path == *out || path.extension().and_then(|e| e.to_str()) != Some("tronorder") {
             continue;
         }
-        let data = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        // R-08: an unreadable .tronorder might carry this same buyer key,
+        // so skipping it could silently allow a key-linking reuse — fail
+        // closed, but tell the user how to unblock themselves.
+        let data = std::fs::read(&path).map_err(|e| {
+            format!(
+                "cannot read {}: {e} — refusing to risk reusing a buyer key; \
+                 fix permissions or move the file aside",
+                path.display()
+            )
+        })?;
         if let Ok(of) = order::parse_order_file(&data) {
             if of.b_hex == b_hex {
                 return Ok(Some(path));
@@ -755,6 +765,7 @@ fn find_order_with_b(
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_redeem(
     package_path: &std::path::Path,
     key: &std::path::Path,
@@ -763,6 +774,7 @@ fn cmd_redeem(
     timeout: u64,
     out: Option<PathBuf>,
     show_qr: bool,
+    cli: bool,
 ) -> Result<(), String> {
     let expect = Pattern::parse(expect_pattern)?;
     if expect.needs_reachability_warning() {
@@ -797,7 +809,7 @@ fn cmd_redeem(
 
     let priv_hex = zeroize::Zeroizing::new(tron_tool::hex_encode(&*result.priv_key));
     if show_qr {
-        qr::render(&priv_hex, out.as_deref(), timeout)
+        qr::render(&priv_hex, out.as_deref(), timeout, cli)
     } else {
         Ok(())
     }

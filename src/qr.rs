@@ -16,8 +16,15 @@ const IMAGE_SIZE: u32 = 480;
 
 /// Render `payload` as a QR code to the terminal (`out == None`) or to a
 /// PNG/SVG file at 0600. `timeout` > 0 arms the self-destruct countdown
-/// (0 = keep). Returns after the countdown/destroy completes.
-pub fn render(payload: &str, out: Option<&Path>, timeout: u64) -> Result<(), String> {
+/// (0 = keep). `cli` selects the keep-hint wording — the `--timeout 0`
+/// flag only exists on the CLI path, not in the interactive menu (R-09).
+/// Returns after the countdown/destroy completes.
+pub fn render(payload: &str, out: Option<&Path>, timeout: u64, cli: bool) -> Result<(), String> {
+    let keep_hint = if cli {
+        " — re-run with --timeout 0 to keep"
+    } else {
+        ""
+    };
     let code = QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::H)
         .map_err(|e| format!("payload exceeds QR capacity: {e}"))?;
 
@@ -47,17 +54,14 @@ pub fn render(payload: &str, out: Option<&Path>, timeout: u64) -> Result<(), Str
             if timeout > 0 {
                 eprintln!(
                     "written {} (mode 0600) — self-destructs in {timeout}s; \
-                     import it now or re-run with --timeout 0 to keep",
+                     import it now{keep_hint}",
                     path.display()
                 );
                 countdown(timeout, &path.display().to_string());
                 destroy_file(path).map_err(|e| format!("destroy {}: {e}", path.display()))?;
                 eprintln!("expired — {} destroyed", path.display());
             } else {
-                eprintln!(
-                    "written {} (mode 0600, --timeout 0 keeps it)",
-                    path.display()
-                );
+                eprintln!("written {} (mode 0600, kept)", path.display());
             }
         }
     }
