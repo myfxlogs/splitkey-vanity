@@ -481,21 +481,25 @@ fn interactive() -> Result<bool, String> {
                     }
                 };
 
+                // A-02: match the order on B alone — filtering on pattern too
+                // hides the real order exactly when the package is a
+                // downgrade, and the expect-pattern default must never come
+                // from seller-signed package data (spec §4).
                 let orders: Vec<PathBuf> = dir_files("tronorder")
                     .into_iter()
                     .filter(|f| {
                         std::fs::read(f)
                             .ok()
                             .and_then(|d| order::parse_order_file(&d).ok())
-                            .map(|of| of.b_hex == bhex && of.pattern.canonical() == pkg.pattern)
+                            .map(|of| of.b_hex == bhex)
                             .unwrap_or(false)
                     })
                     .collect();
                 eprintln!(
                     "{}",
                     lang.t(
-                        "  订单文件（自动匹配 pattern+B，空=手动输 expect-pattern）",
-                        "  order file (auto-matched on pattern+B, empty=manual)"
+                        "  订单文件（自动匹配 B，空=手动输 expect-pattern）",
+                        "  order file (auto-matched on B, empty=manual)"
                     )
                 );
                 let order_path = pick_file(lang, &orders, true)?;
@@ -505,9 +509,32 @@ fn interactive() -> Result<bool, String> {
                             &std::fs::read(&p)
                                 .map_err(|e| format!("cannot read {}: {e}", p.display()))?,
                         )?;
-                        of.pattern.canonical()
+                        let want = of.pattern.canonical();
+                        if want != pkg.pattern {
+                            eprintln!(
+                                "{}",
+                                lang.t(
+                                    "  ⚠ 交付 pattern 与订单不符 — 以订单为准校验",
+                                    "  ⚠ package pattern differs from your order — verifying against the order"
+                                )
+                            );
+                            eprintln!("    ordered={want} delivered={}", pkg.pattern);
+                        }
+                        want
                     }
-                    None => prompt("expect-pattern", &pkg.pattern)?,
+                    None => loop {
+                        let s = prompt("expect-pattern", "")?;
+                        if !s.is_empty() {
+                            break s;
+                        }
+                        eprintln!(
+                            "{}",
+                            lang.t(
+                                "  必填 — 不接受包内 pattern 作默认值（防降级交付）",
+                                "  required — the package's own pattern is never the default"
+                            )
+                        );
+                    },
                 };
 
                 let export = if matches!(
